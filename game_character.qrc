@@ -1,0 +1,37 @@
+<RCC>
+    <qresource prefix="/assets">
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Attack.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Attack2.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Attack2NoMovement.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_AttackCombo2hit.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_AttackComboNoMovement.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_AttackNoMovement.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Crouch.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_CrouchAttack.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_CrouchFull.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_CrouchTransition.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_CrouchWalk.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Dash.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Death.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_DeathNoMovement.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Fall.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Hit.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Idle.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Jump.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_JumpFallInbetween.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Roll.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Run.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Slide.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_SlideFull.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_SlideTransitionEnd.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_SlideTransitionStart.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_TurnAround.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallClimb.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallClimbNoMovement.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallHang.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallSlide.png</file>
+    </qresource>
+    <qresource prefix="/Maps">
+        <file>assets/default_map.png</file>
+    </qresource>
+</RCC>
