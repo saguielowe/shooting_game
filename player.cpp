@@ -7,6 +7,8 @@ Player::Player(float x, float y) : x(x), y(y) {
     animation.load("jump", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Jump.png", 120, 3);
     animation.load("crouch", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Crouch.png", 120, 1);
     animation.load("fall", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Fall.png", 120, 3);
+    animation.load("hurt", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_SlideFull.png", 120, 4);
+    animation.load("knife", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Attack2NoMovement.png", 120, 6);
 
     animation.play("idle");
 }
@@ -53,13 +55,23 @@ void Player::moveRight(){
 }
 
 void Player::update(){ // player更新自身位置，animation更新自身动画
+    bool loop = true;
+    if (state.moveState == "hurt"){
+        animation.play("hurt");
+        loop = false;
+    }
+    if (state.shootState){
+        if (weapon == WeaponType::knife){
+            animation.play("knife", true);
+        }
+    }
     if (state.moveState == "stop" && vx == 0){
         state.moveState = "null"; // 如果减速至0则变为静止
     }
     if (state.moveState == "jump" && vy > 0 && onGround == false){
         state.moveState = "fall";
     }
-    //qDebug() << "state" << state.moveState;
+
     if (state.moveState == "jump" && onGround){ // 在地面才给推一把
         vy = - jumpSpeed;
         animation.play("jump");
@@ -89,7 +101,7 @@ void Player::update(){ // player更新自身位置，animation更新自身动画
     y += vy * dt;
     x += vx * dt;
 
-    animation.update();
+    animation.update(loop);
     hitbox = animation.getTargetRect();
 }
 
@@ -100,4 +112,43 @@ void Player::draw(QPainter& painter) { // 传窗口painter的引用
     else{
         animation.draw(painter, x, y, true); // 播放动画
     }
+
+    QRect backgroundRect(hitbox.left(), hitbox.top() - 20, 100, 15);
+    painter.setBrush(Qt::gray);
+    painter.drawRect(backgroundRect);
+
+    // 绘制红色血条
+    int barWidth = static_cast<int>(100 * (fmax(0, hp) / maxHp));
+    QRect healthRect(hitbox.left(), hitbox.top() - 20, barWidth, 15);
+    painter.setBrush(Qt::red);
+    painter.drawRect(healthRect);
+    painter.drawText(healthRect, QString::number(hp));
+}
+
+void Player::weaponControll(QString type){
+    if (type == "knife"){
+        weapon = WeaponType::knife;
+    }
+    else if (type == "ball"){
+        weapon = WeaponType::ball;
+    }
+    else if (type == "bandage"){
+        hp = fmin(hp + 30, 100);
+    }
+    else if (type == "rifle"){
+        weapon = WeaponType::rifle;
+    }
+    else if (type == "medkit"){
+        hp = 100;
+    }
+    else if (type == "sniper"){
+        weapon = WeaponType::sniper;
+    }
+    else if (type == "adrenaline"){
+        velocityratio = 1.5;
+    }
+}
+
+bool Player::isDead() const{
+    return hp<=0 ;
 }

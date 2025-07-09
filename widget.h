@@ -4,9 +4,14 @@
 #include <QWidget>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QKeyEvent>
+#include <QPainter>
 #include "player.h"
 #include "map.h"
 #include "playercontroller.h"
+#include "combatmanager.h"
+#include "dropitem.h"
+#include <QRandomGenerator>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -20,6 +25,8 @@ class Widget : public QWidget
 
 public:
     Widget(QWidget *parent = nullptr);
+    void updateDrops(float dt);
+    void drawDrops(QPainter& painter);
     ~Widget();
 
 protected:
@@ -31,19 +38,21 @@ private slots:
     void gameLoop();
 
 private:
+    void spawnDrop();
+    void gameEnd();
+    QVector<std::shared_ptr<DropItem>> drops;
     struct inputIntent {
         QString moveIntent;
         bool attackIntent;
     };
     inputIntent intent[2];
 
-    std::unique_ptr<Player> player1;
-    std::unique_ptr<Player> player2;
-    std::unique_ptr<PlayerController> controller1;
-    std::unique_ptr<PlayerController> controller2;
+    QVector<std::shared_ptr<Player>> players;
+    QVector<std::shared_ptr<PlayerController>> controllers;
 
     QTimer* timer;
     QElapsedTimer lastTime;
+    CombatManager cm;
 
     QString currentScene;
     bool keyLeft = false, keyRight = false, crouching = false; // 辅助变量来判断玩家的按键输入对应哪种状态

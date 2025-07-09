@@ -1,9 +1,5 @@
 #include "widget.h"
 #include "./ui_widget.h"
-#include <QTimer>
-#include <QKeyEvent>
-#include <QPainter>
-#include <QElapsedTimer>
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
@@ -15,10 +11,20 @@ Widget::Widget(QWidget *parent)
     intent[0].attackIntent = false;
     intent[1].moveIntent = "null";
     intent[1].attackIntent = false;
-    player1 = std::make_unique<Player>(100, 100);
-    player2 = std::make_unique<Player>(500, 100);
-    controller1 = std::make_unique<PlayerController>(player1.get());
-    controller2 = std::make_unique<PlayerController>(player2.get());
+    auto p1 = std::make_shared<Player>(100, 100);
+    auto p2 = std::make_shared<Player>(500, 100);
+
+    auto c1 = std::make_shared<PlayerController>();
+    auto c2 = std::make_shared<PlayerController>();
+
+    c1->bindPlayer(p1);  // 用 weak_ptr 持有
+    c2->bindPlayer(p2);
+
+    players.push_back(p1);
+    players.push_back(p2);
+
+    controllers.push_back(c1);
+    controllers.push_back(c2);
 
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
@@ -29,8 +35,9 @@ Widget::Widget(QWidget *parent)
 void Widget::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     Map::getInstance().loadScene(currentScene, painter); // 需要绘制的内容：地图（交给map）、玩家（交给player）
-    player1->draw(painter);
-    player2->draw(painter);
+    players[0]->draw(painter);
+    players[1]->draw(painter);
+    drawDrops(painter);
 }
 /*
 inputIntent: 输入意图。
@@ -57,6 +64,13 @@ void Widget::keyPressEvent(QKeyEvent* event) {
         intent[0].moveIntent = "null";
     }
 
+    if (event->key() == Qt::Key_E) {
+        intent[0].attackIntent = true;
+    }
+    else{
+        intent[0].attackIntent = false;
+    }
+
     if (event->key() == Qt::Key_J) {
         intent[1].moveIntent = "moving_left"; // 同时按下左右键优先处理左键
     }
@@ -72,33 +86,123 @@ void Widget::keyPressEvent(QKeyEvent* event) {
     else {
         intent[1].moveIntent = "null";
     }
+
+    if (event->key() == Qt::Key_O) {
+        intent[1].attackIntent = true;
+    }
+
 }
 
 void Widget::keyReleaseEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_A || event->key() == Qt::Key_S || event->key() == Qt::Key_W || event->key() == Qt::Key_D) {
         intent[0].moveIntent = "null";
     }
-    if (event->key() == Qt::Key_E) {
-        intent[0].attackIntent = true;
-    }
+
     if (event->key() == Qt::Key_J || event->key() == Qt::Key_K || event->key() == Qt::Key_L || event->key() == Qt::Key_I) {
         intent[1].moveIntent = "null";
     }
-    if (event->key() == Qt::Key_O) {
-        intent[1].attackIntent = true;
-    }
+
 }
 
 void Widget::gameLoop() {
     float dt = lastTime.restart() / 1000.0f;
-    player1->setDt(dt); // 万一卡顿根据真实帧数设置dt
-    player2->setDt(dt);
-    controller1->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
-    controller2->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
+    if (QRandomGenerator::global()->bounded(1000) < 2) {
+        spawnDrop(); // 每帧尝试生成掉落物
+    }
+    updateDrops(dt);
+    players.erase(std::remove_if(players.begin(), players.end(),
+                                 [](const std::shared_ptr<Player>& p) {
+                                     return p->isDead();
+                                 }), players.end());
+    controllers.erase(std::remove_if(controllers.begin(), controllers.end(),
+                                     [](const std::shared_ptr<PlayerController>& c) {
+                                         return c->isOrphaned();  // ✅ 玩家已被销毁
+                                     }), controllers.end());
+    // TODO:
+    // 如果只有一个玩家结束游戏循环，否则造成访问越界
+    if (players.length() < 2){
+        gameEnd();
+        return;
+    }
+    players[0]->setDt(dt); // 万一卡顿根据真实帧数设置dt
+    players[1]->setDt(dt);
+    controllers[0]->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
+    controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
+    cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
     update();  // 触发 paintEvent()，绘制player位置
+    intent[1].attackIntent = false;
+    intent[0].attackIntent = false;
 }
 
+void Widget::spawnDrop() {
+    float x = QRandomGenerator::global()->bounded(100, 900); // 视口宽度
+
+    // Step 1: 生成主类（武器/护甲/药品）
+    int categoryRoll = QRandomGenerator::global()->bounded(100); // [0, 99]
+    QString itemName;
+
+    if (categoryRoll < 50) { // 武器 50%
+        int weaponRoll = QRandomGenerator::global()->bounded(100);
+        if (weaponRoll < 40) {
+            itemName = "knife"; // 小刀 40%
+        } else if (weaponRoll < 70) {
+            itemName = "ball"; // 实心球 30%
+        } else if (weaponRoll < 90) {
+            itemName = "rifle"; // 步枪 20%
+        } else {
+            itemName = "sniper"; // 狙击枪 10%
+        }
+    } else if (categoryRoll < 70) { // 护甲 20%
+        int armorRoll = QRandomGenerator::global()->bounded(100);
+        if (armorRoll < 50) {
+            itemName = "chainmail"; // 锁子甲 50%
+        } else {
+            itemName = "vest"; // 防弹衣 50%
+        }
+    } else { // 药品 30%
+        int medicineRoll = QRandomGenerator::global()->bounded(100);
+        if (medicineRoll < 50) {
+            itemName = "bandage"; // 绷带 50%
+        } else if (medicineRoll < 70) {
+            itemName = "medkit"; // 医疗箱 20%
+        } else {
+            itemName = "adrenaline"; // 肾上腺素 30%
+        }
+    }
+    qDebug() << "decided to spawn:" << itemName;
+    drops.push_back(std::make_shared<DropItem>(x, itemName));
+}
+
+void Widget::drawDrops(QPainter& painter) {
+    for (const auto& drop : drops) {
+        drop->draw(painter);
+    }
+}
+
+void Widget::updateDrops(float dt){
+    for (auto& drop : drops) {
+        if (drop->isCollectedBy(players[0].get()) && intent[0].moveIntent == "crouch") {
+            drop->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            players[0]->weaponControll(drop->itemType);
+        }
+        else if (drop->isCollectedBy(players[1].get()) && intent[1].moveIntent == "crouch") {
+            drop->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            players[1]->weaponControll(drop->itemType);
+        }
+        drop->update(dt);
+    }
+    // ✅ 清除掉标记为删除或超时的掉落物
+    drops.erase(std::remove_if(drops.begin(), drops.end(),
+                               [](const std::shared_ptr<DropItem>& d) {
+                                   return d->isExpired() || d->isMarkedForDeletion();
+                               }), drops.end());
+}
 Widget::~Widget()
 {
     delete ui;
+}
+
+void Widget::gameEnd(){
+    timer->stop();
+    qDebug() << "game is over";
 }

@@ -38,7 +38,7 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
         if (playerHitbox.intersects(box)) {
 
             // 如果发生相交，进一步判断碰撞方向
-            QRect overlap = playerHitbox.intersected(box);
+            QRectF overlap = playerHitbox.intersected(box);
             // 1. 判断是否是垂直方向的主导碰撞 (地面或天花板)
             if (playerVy > 0) { // 玩家向下移动 (可能碰到地面)
                 // 如果重叠的垂直高度远小于水平宽度，则更可能是垂直碰撞
@@ -47,7 +47,6 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
                 {
                     result.direction = "ground";
                     result.correctedPosition = box.top();
-                    qDebug() << "Collision: Ground with obstacle at " << box;
                 }
             } else if (playerVy < 0) { // 玩家向上移动 (可能碰到天花板)
                     // 如果重叠的垂直高度远小于水平宽度，则更可能是垂直碰撞
@@ -56,7 +55,6 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
                     {
                         result.direction = "ceiling";
                         result.correctedPosition = box.bottom();
-                        qDebug() << "Collision: Ceiling with obstacle at " << box;
                     }
                 }
 

@@ -10,35 +10,51 @@ Animation::Animation()
 
 void Animation::load(const QString& name, const QString& imagePath, int frameWidth, int frameCount) {
     AnimData anim;
-    anim.sheet = QPixmap(imagePath);/*
-    if (anim.sheet.isNull()) {
-        qDebug() << "Failed to load image:" << imagePath;
-    } else {
-        qDebug() << "Loaded" << imagePath << "size:" << anim.sheet.size();
-    }*/
+    anim.sheet = QPixmap(imagePath);
     anim.frameWidth = frameWidth;
     anim.frameCount = frameCount;
     animations[name] = anim;
 }
 
-void Animation::play(const QString& name) {
+void Animation::play(const QString& name, bool once) { // 根据name选择绘制的动画组
+    if (playingOnce && oncePlayed == false){
+        return; // 如果正在做一定要播完一次的动画，那么强行阻止改变动画
+    }
     if (name != currentAnim) {
         currentAnim = name;
         currentFrame = 0;
         frameCounter = 0;
+        playingOnce = once; // 接受新参数
+        oncePlayed = false;
     }
 }
 
-void Animation::update() {
-    // qDebug()<<"updating player's animation……";
+void Animation::update(bool loop) { // 根据play的动画组选择绘制哪一帧，循环或停止到最后一帧
     frameCounter++;
     if (frameCounter >= frameDelay) {
         frameCounter = 0;
-        currentFrame = (currentFrame + 1) % animations[currentAnim].frameCount;
+        if (loop && playingOnce == false){
+            currentFrame = (currentFrame + 1) % animations[currentAnim].frameCount;
+        }
+        else if (!loop){
+            if (animations[currentAnim].frameCount > currentFrame + 1){
+                currentFrame ++;
+            }
+        }
+        else if (playingOnce){
+            if (oncePlayed) return;
+            if (animations[currentAnim].frameCount > currentFrame + 1){
+                currentFrame ++;
+            }
+            else{
+                oncePlayed = true;
+                playingOnce = false;
+            }
+        }
     }
 }
 
-void Animation::draw(QPainter& painter, float x, float y, bool flipped) {
+void Animation::draw(QPainter& painter, float x, float y, bool flipped) { // 负责绘制，绘制哪一帧由update决定
     if (!animations.contains(currentAnim)) return;
 
     const AnimData& anim = animations[currentAnim];
@@ -58,6 +74,7 @@ void Animation::draw(QPainter& painter, float x, float y, bool flipped) {
     // 关闭像素平滑处理，保留清晰像素风格
     painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
     painter.setPen(Qt::blue);
+    painter.setBrush(Qt::NoBrush);
     if (flipped) {
         frame = frame.transformed(QTransform().scale(-1, 1));
         // 注意翻转后也要按缩放后宽度修正 x 坐标

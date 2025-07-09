@@ -34,4 +34,13 @@
     <qresource prefix="/Maps">
         <file>assets/default_map.png</file>
     </qresource>
+    <qresource prefix="/items">
+        <file>assets/items/knife.png</file>
+        <file>assets/items/ball.png</file>
+        <file>assets/items/bandage.png</file>
+        <file>assets/items/rifle.png</file>
+        <file>assets/items/adrenaline.png</file>
+        <file>assets/items/medkit.png</file>
+        <file>assets/items/sniper.png</file>
+    </qresource>
 </RCC>

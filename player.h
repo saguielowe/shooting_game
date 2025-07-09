@@ -17,6 +17,11 @@ public:
     void stop();
     void applyGravity();
     void setDt(float t);
+    void weaponControll(QString type);
+    bool isDead() const;
+    void modifyvelocity(float ratio){
+        velocityratio = ratio;
+    }
 
     bool isShooting = false;
     bool onGround = false;
@@ -29,12 +34,19 @@ public:
 
     float x, y, dt;
     float vx = 0, vy = 0;
+    float hp = 100;
+    int armor = 0;
     QRect hitbox;
 
+    enum class WeaponType{
+        punch, knife, ball, rifle, sniper
+    };
+    WeaponType weapon = WeaponType::punch;
+
     void draw(QPainter& painter);
+
 private:
     Animation animation;
-
     float width = 40, height = 60;
 
     const float gravity = 1500.0f;
@@ -44,6 +56,9 @@ private:
     const float resistance = 20.0f; // 不按按键时，左右移动速度的衰减
     const float airResistance = 30.0f; // 不按按键时，空中左右移动速度的衰减
     const float acceleration = 30.0f; // 左右移动时，速度的增加
+    float velocityratio = 1;
+
+    const float maxHp = 100;
 };
 
 #endif // PLAYER_H

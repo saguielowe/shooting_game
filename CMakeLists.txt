@@ -29,6 +29,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         map.h map.cpp
         playercontroller.h playercontroller.cpp
         CollisionResult.h
+        combatmanager.h combatmanager.cpp
+        dropitem.h dropitem.cpp
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET shooting_game APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

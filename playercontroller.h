@@ -5,13 +5,29 @@
 class PlayerController
 {
 public:
-    PlayerController(Player* player);
+    PlayerController();
+    void bindPlayer(const std::shared_ptr<Player>& p) {
+        player = p; // ✅ 不增加引用计数
+    }
+
+    bool isOrphaned() const {
+        return player.lock() == nullptr; // ✅ 玩家已被销毁
+    }
     void handleIntent(QString moveIntent, bool attackIntent);
+    void receiveHit(float damage, QString direction);
+    QRect getHitbox();
+    bool canAttack() const { return player.lock()->state.shootState; }
+    void triggerAttackCooldown() { cooldowns["attack"] = 1; }
+    Player::WeaponType getWeaponType();
 
 private:
-    Player* player;
+    std::weak_ptr<Player> player;
     QMap <QString, float> cooldowns;
-    void applyCollision();
+    void applyMapCollision();
+    std::shared_ptr<Player> getPlayer() {
+        return player.lock();
+    }
+    void applyEntityCollision();
 };
 
 #endif // PLAYERCONTROLLER_H
