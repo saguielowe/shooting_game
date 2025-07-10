@@ -35,7 +35,9 @@ public:
     float x, y, dt;
     float vx = 0, vy = 0;
     float hp = 100;
-    int armor = 0;
+    int armor = 0, ballCount = 0, bulletCount = 0;
+    bool hpRegenerate = false; // 回血状态
+    float regenerateTime = 0;
     QRect hitbox;
 
     enum class WeaponType{
@@ -59,6 +61,8 @@ private:
     float velocityratio = 1;
 
     const float maxHp = 100;
+    const int maxBalls = 3;
+    const int maxBullets = 3;
 };
 
 #endif // PLAYER_H

@@ -1,4 +1,5 @@
 #include "combatmanager.h"
+#include "entity.h"
 #include <QDebug>
 
 CombatManager::CombatManager() {}
@@ -28,5 +29,15 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
             int damage = (p2->getWeaponType() == Player::WeaponType::knife) ? 15 : 5;
             p1->receiveHit(damage, dirToP1);
         }
+    }
+}
+
+void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p){
+    if (e->hitbox().intersects(p->getHitbox())) {
+        bool p1LeftOfP2 = e->hitbox().right() < p->getHitbox().left();
+        QString dirToP2 = p1LeftOfP2 ? "right" : "left";
+        qDebug() <<"撞击！";
+        e->onCollideWithPlayer(); // 多态自动决定子类行为
+        p->receiveHit(e->getDamage(), dirToP2);
     }
 }

@@ -28,6 +28,10 @@ Widget::Widget(QWidget *parent)
 
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
+    connect(c1.get(), &PlayerController::requestThrowBall,
+            this, &Widget::onPlayerRequest);
+    connect(c2.get(), &PlayerController::requestThrowBall,
+            this, &Widget::onPlayerRequest);
     timer->start(16);  // 约 60fps
     lastTime.start();
     ui->setupUi(this);
@@ -37,7 +41,9 @@ void Widget::paintEvent(QPaintEvent*) {
     Map::getInstance().loadScene(currentScene, painter); // 需要绘制的内容：地图（交给map）、玩家（交给player）
     players[0]->draw(painter);
     players[1]->draw(painter);
-    drawDrops(painter);
+    for (const auto& entity : entities) {
+        entity->draw(painter);
+    }
 }
 /*
 inputIntent: 输入意图。
@@ -106,7 +112,7 @@ void Widget::keyReleaseEvent(QKeyEvent* event) {
 
 void Widget::gameLoop() {
     float dt = lastTime.restart() / 1000.0f;
-    if (QRandomGenerator::global()->bounded(1000) < 2) {
+    if (QRandomGenerator::global()->bounded(1000) < 4) {
         spawnDrop(); // 每帧尝试生成掉落物
     }
     updateDrops(dt);
@@ -129,7 +135,22 @@ void Widget::gameLoop() {
     controllers[0]->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
     controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
     cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
-    update();  // 触发 paintEvent()，绘制player位置
+    updateBalls(dt);
+    //qDebug() << "Entity count: " << entities.size();
+    entities.erase(std::remove_if(entities.begin(), entities.end(),
+                               [](const std::shared_ptr<Entity>& e) {
+                                   return e->shouldBeRemoved();
+                               }), entities.end());
+    drops.erase(std::remove_if(drops.begin(), drops.end(), [](auto& w) {
+                    return w.expired(); // ✅ 清除掉失效的 weak_ptr
+                }), drops.end());
+    balls.erase(std::remove_if(balls.begin(), balls.end(), [](auto& w) {
+                    return w.expired(); // ✅ 清除掉失效的 weak_ptr
+                }), balls.end());
+    bullets.erase(std::remove_if(bullets.begin(), bullets.end(), [](auto& w) {
+                    return w.expired(); // ✅ 清除掉失效的 weak_ptr
+                }), bullets.end());
+    update();  // 触发 paintEvent()
     intent[1].attackIntent = false;
     intent[0].attackIntent = false;
 }
@@ -170,33 +191,47 @@ void Widget::spawnDrop() {
         }
     }
     qDebug() << "decided to spawn:" << itemName;
-    drops.push_back(std::make_shared<DropItem>(x, itemName));
-}
-
-void Widget::drawDrops(QPainter& painter) {
-    for (const auto& drop : drops) {
-        drop->draw(painter);
-    }
+    auto drop = std::make_shared<DropItem>(x, itemName);
+    entities.push_back(drop);
+    drops.push_back(drop);
 }
 
 void Widget::updateDrops(float dt){
     for (auto& drop : drops) {
-        if (drop->isCollectedBy(players[0].get()) && intent[0].moveIntent == "crouch") {
-            drop->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
-            players[0]->weaponControll(drop->itemType);
+        if (drop.lock() == nullptr){
+            qDebug() <<"here is a fucking nullptr";
+            return;
         }
-        else if (drop->isCollectedBy(players[1].get()) && intent[1].moveIntent == "crouch") {
-            drop->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
-            players[1]->weaponControll(drop->itemType);
+        if (drop.lock()->isCollectedBy(players[0].get()) && intent[0].moveIntent == "crouch") {
+            drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            players[0]->weaponControll(drop.lock()->itemType);
         }
-        drop->update(dt);
+        else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == "crouch") {
+            drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            players[1]->weaponControll(drop.lock()->itemType);
+        }
+        drop.lock()->setDt(dt);
+        drop.lock()->update();
     }
-    // ✅ 清除掉标记为删除或超时的掉落物
-    drops.erase(std::remove_if(drops.begin(), drops.end(),
-                               [](const std::shared_ptr<DropItem>& d) {
-                                   return d->isExpired() || d->isMarkedForDeletion();
-                               }), drops.end());
 }
+
+void Widget::updateBalls(float dt){
+    for (auto& ball : balls) {
+        if (ball.lock() == nullptr) return;
+        ball.lock()->setDt(dt);
+        ball.lock()->update();
+        cm.checkEntityVsPlayerCollision(ball.lock().get(), controllers[0].get());
+        cm.checkEntityVsPlayerCollision(ball.lock().get(), controllers[1].get());
+    }
+    for (auto& bullet : bullets) {
+        if (bullet.lock() == nullptr) return;
+        bullet.lock()->setDt(dt);
+        bullet.lock()->update();
+        cm.checkEntityVsPlayerCollision(bullet.lock().get(), controllers[0].get());
+        cm.checkEntityVsPlayerCollision(bullet.lock().get(), controllers[1].get());
+    }
+}
+
 Widget::~Widget()
 {
     delete ui;
@@ -205,4 +240,36 @@ Widget::~Widget()
 void Widget::gameEnd(){
     timer->stop();
     qDebug() << "game is over";
+}
+
+void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon) {
+    if (weapon == Player::WeaponType::ball){
+        if (vx > 0){
+            vx += 500;
+        }
+        else if (vx < 0){
+            vx -= 500;
+        }
+        /*if (vy > 0){
+        vy += 200;
+        } // 改动y值反而失去了趣味性，命中率感人
+        else{
+            vy -= 500;
+        }*/
+        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy));
+        entities.push_back(ball);
+        balls.push_back(ball);
+    }
+    else if (weapon == Player::WeaponType::rifle){
+        if (vx >= 0){
+            vx = 2000;
+        }
+        else if (vx < 0){
+            vx = -2000;
+        }
+        qDebug() <<"bullet spawned";
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1);
+        entities.push_back(bullet);
+        bullets.push_back(bullet);
+    }
 }

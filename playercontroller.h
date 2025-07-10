@@ -1,9 +1,11 @@
 #ifndef PLAYERCONTROLLER_H
 #define PLAYERCONTROLLER_H
 #include "player.h"
+#include <QObject>
 #include "CollisionResult.h"
-class PlayerController
+class PlayerController : public QObject
 {
+    Q_OBJECT
 public:
     PlayerController();
     void bindPlayer(const std::shared_ptr<Player>& p) {
@@ -17,9 +19,11 @@ public:
     void receiveHit(float damage, QString direction);
     QRect getHitbox();
     bool canAttack() const { return player.lock()->state.shootState; }
-    void triggerAttackCooldown() { cooldowns["attack"] = 1; }
+    void triggerAttackCooldown(float time=1) { cooldowns["attack"] = time; }
     Player::WeaponType getWeaponType();
 
+signals:
+    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon); // 🟩 投掷请求（不需要传目标）
 private:
     std::weak_ptr<Player> player;
     QMap <QString, float> cooldowns;

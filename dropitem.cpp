@@ -6,7 +6,7 @@
 #include "CollisionResult.h"
 
 DropItem::DropItem(float startX, const QString type)
-    : position(startX, 0), itemType(type)
+    : Entity(QPointF(startX , 0)), itemType(type)
 {
     velocity = QPointF(0, 0);
 
@@ -14,10 +14,9 @@ DropItem::DropItem(float startX, const QString type)
     pixmap = QPixmap(path).scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
 
-void DropItem::update(float dt) {
-    if (!onGround){
-        velocity.ry() += 1500 * dt; // 模拟重力
-    }
+void DropItem::update() {
+    //qDebug() << position << velocity;
+    applyGravity();
 
     float newX = position.x() + velocity.x() * dt;
     float newY = position.y() + velocity.y() * dt;

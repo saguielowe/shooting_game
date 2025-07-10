@@ -55,6 +55,16 @@ void Player::moveRight(){
 }
 
 void Player::update(){ // player更新自身位置，animation更新自身动画
+    if (hpRegenerate){
+        if (regenerateTime > 0){
+            regenerateTime -= dt;
+            hp = fmin(100, hp + 3 * dt);
+        }
+        else{
+            hpRegenerate = false;
+            regenerateTime = 0;
+        }
+    }
     bool loop = true;
     if (state.moveState == "hurt"){
         animation.play("hurt");
@@ -122,7 +132,7 @@ void Player::draw(QPainter& painter) { // 传窗口painter的引用
     QRect healthRect(hitbox.left(), hitbox.top() - 20, barWidth, 15);
     painter.setBrush(Qt::red);
     painter.drawRect(healthRect);
-    painter.drawText(healthRect, QString::number(hp));
+    painter.drawText(healthRect, QString::number(int(hp)));
 }
 
 void Player::weaponControll(QString type){
@@ -131,12 +141,14 @@ void Player::weaponControll(QString type){
     }
     else if (type == "ball"){
         weapon = WeaponType::ball;
+        ballCount = maxBalls;
     }
     else if (type == "bandage"){
         hp = fmin(hp + 30, 100);
     }
     else if (type == "rifle"){
         weapon = WeaponType::rifle;
+        bulletCount = maxBullets;
     }
     else if (type == "medkit"){
         hp = 100;
@@ -146,6 +158,8 @@ void Player::weaponControll(QString type){
     }
     else if (type == "adrenaline"){
         velocityratio = 1.5;
+        hpRegenerate = true;
+        regenerateTime = 20;
     }
 }
 

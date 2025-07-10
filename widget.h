@@ -7,10 +7,12 @@
 #include <QKeyEvent>
 #include <QPainter>
 #include "player.h"
+#include "ball.h"
 #include "map.h"
 #include "playercontroller.h"
 #include "combatmanager.h"
 #include "dropitem.h"
+#include "bullet.h"
 #include <QRandomGenerator>
 
 QT_BEGIN_NAMESPACE
@@ -26,6 +28,7 @@ class Widget : public QWidget
 public:
     Widget(QWidget *parent = nullptr);
     void updateDrops(float dt);
+    void updateBalls(float dt);
     void drawDrops(QPainter& painter);
     ~Widget();
 
@@ -36,11 +39,12 @@ protected:
 
 private slots:
     void gameLoop();
+    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon);
 
 private:
     void spawnDrop();
     void gameEnd();
-    QVector<std::shared_ptr<DropItem>> drops;
+
     struct inputIntent {
         QString moveIntent;
         bool attackIntent;
@@ -49,6 +53,11 @@ private:
 
     QVector<std::shared_ptr<Player>> players;
     QVector<std::shared_ptr<PlayerController>> controllers;
+
+    QVector<std::weak_ptr<Ball>> balls;
+    QVector<std::weak_ptr<DropItem>> drops;
+    QVector<std::weak_ptr<Bullet>> bullets;
+    QVector<std::shared_ptr<Entity>> entities;
 
     QTimer* timer;
     QElapsedTimer lastTime;

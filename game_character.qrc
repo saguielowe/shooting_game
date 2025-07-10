@@ -30,6 +30,14 @@
         <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallClimbNoMovement.png</file>
         <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallHang.png</file>
         <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_WallSlide.png</file>
+        <file>assets/items/adrenaline.png</file>
+        <file>assets/items/ball.png</file>
+        <file>assets/items/bandage.png</file>
+        <file>assets/items/bullet.png</file>
+        <file>assets/items/knife.png</file>
+        <file>assets/items/medkit.png</file>
+        <file>assets/items/rifle.png</file>
+        <file>assets/items/sniper.png</file>
     </qresource>
     <qresource prefix="/Maps">
         <file>assets/default_map.png</file>
@@ -42,5 +50,6 @@
         <file>assets/items/adrenaline.png</file>
         <file>assets/items/medkit.png</file>
         <file>assets/items/sniper.png</file>
+        <file>assets/items/bullet.png</file>
     </qresource>
 </RCC>

@@ -56,6 +56,27 @@ void PlayerController::handleIntent(QString moveIntent, bool attackIntent){
     if (cooldowns["attack"] == 0 && attackIntent){ // 无需判定是否击中，空挥也有动画
         player.lock()->state.shootState = true; // 当按下攻击键且不处于冷却，判定可以攻击，打不打到无所谓
         triggerAttackCooldown();
+        if (player.lock()->weapon == Player::WeaponType::ball){
+            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball);
+            player.lock()->ballCount --;
+            if (player.lock()->ballCount == 0){
+                player.lock()->weapon = Player::WeaponType::punch;
+            }
+        }
+        else if (player.lock()->weapon == Player::WeaponType::rifle){
+            qDebug() << "shoot bullet";
+            if (player.lock()->vx != 0){
+                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::rifle);
+            }
+            else{
+                float vvx = player.lock()->x < 512 ? 1 : -1; // 自动根据人物在场景位置选择射击方向
+                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, Player::WeaponType::rifle);
+            }
+            player.lock()->bulletCount --;
+            if (player.lock()->bulletCount == 0){
+                player.lock()->weapon = Player::WeaponType::punch;
+            }
+        }
     }
     else{
         player.lock()->state.shootState = false;
@@ -91,6 +112,12 @@ void PlayerController::handleIntent(QString moveIntent, bool attackIntent){
 }
 
 void PlayerController::receiveHit(float damage, QString direction) {
+    if (cooldowns["hurt"] != 0){
+        return; // 硬直状态不再受伤（每1秒最多只受一次伤）
+    }
+    if (damage < 1){
+        return; // 忽略极小伤害，并且不给硬直
+    }
     player.lock()->hp -= damage;
     cooldowns["hurt"] = 1;
     if (direction == "left"){
