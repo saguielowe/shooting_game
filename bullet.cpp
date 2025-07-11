@@ -36,7 +36,7 @@ float Bullet::getDamage(){
         return 30;
     }
     else if (type == 2){
-        return 50;
+        return 60;
     }
 }
 

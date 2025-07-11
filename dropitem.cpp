@@ -16,6 +16,7 @@ DropItem::DropItem(float startX, const QString type)
 
 void DropItem::update() {
     //qDebug() << position << velocity;
+    dt = fmin(dt, 0.033f);
     applyGravity();
 
     float newX = position.x() + velocity.x() * dt;
@@ -64,7 +65,6 @@ bool DropItem::isMarkedForDeletion() const {
 }
 
 void DropItem::markForDeletion() {
-    qDebug() <<"to be removed";
     toBeRemoved = true;
 }
 

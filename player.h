@@ -35,30 +35,36 @@ public:
     float x, y, dt;
     float vx = 0, vy = 0;
     float hp = 100;
-    int armor = 0, ballCount = 0, bulletCount = 0;
+    int ballCount = 0, bulletCount = 0;
     bool hpRegenerate = false; // 回血状态
+    bool direction = 1; // 1：右，0：左
     float regenerateTime = 0;
     QRect hitbox;
 
     enum class WeaponType{
         punch, knife, ball, rifle, sniper
     };
-    WeaponType weapon = WeaponType::punch;
+    enum class ArmorType{
+        chainmail, vest, noArmor
+    };
 
-    void draw(QPainter& painter);
+    WeaponType weapon = WeaponType::punch;
+    ArmorType armor = ArmorType::noArmor;
+    int vestHardness = 100;
+
+    void draw(QPainter& painter, bool canHide = false); // 可以隐藏的场景如草地
 
 private:
     Animation animation;
     float width = 40, height = 60;
 
     const float gravity = 1500.0f;
-    const float moveSpeed = 400.0f;
+    const float moveSpeed = 400.0f; // 最大移速
     const float jumpSpeed = 800.0f;
-    const float groundY = 400; // 顶=0
     const float resistance = 20.0f; // 不按按键时，左右移动速度的衰减
     const float airResistance = 30.0f; // 不按按键时，空中左右移动速度的衰减
     const float acceleration = 30.0f; // 左右移动时，速度的增加
-    float velocityratio = 1;
+    float velocityratio = 1.0; // 最大移速倍率
 
     const float maxHp = 100;
     const int maxBalls = 3;

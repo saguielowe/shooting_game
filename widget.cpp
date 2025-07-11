@@ -11,8 +11,8 @@ Widget::Widget(QWidget *parent)
     intent[0].attackIntent = false;
     intent[1].moveIntent = "null";
     intent[1].attackIntent = false;
-    auto p1 = std::make_shared<Player>(100, 100);
-    auto p2 = std::make_shared<Player>(500, 100);
+    auto p1 = std::make_shared<Player>(100, 600);
+    auto p2 = std::make_shared<Player>(800, 600);
 
     auto c1 = std::make_shared<PlayerController>();
     auto c2 = std::make_shared<PlayerController>();
@@ -112,7 +112,8 @@ void Widget::keyReleaseEvent(QKeyEvent* event) {
 
 void Widget::gameLoop() {
     float dt = lastTime.restart() / 1000.0f;
-    if (QRandomGenerator::global()->bounded(1000) < 4) {
+    if (dt > 0.05) qDebug() << 1 / dt;
+    if (QRandomGenerator::global()->bounded(1000) < 3) {
         spawnDrop(); // 每帧尝试生成掉落物
     }
     updateDrops(dt);
@@ -190,7 +191,7 @@ void Widget::spawnDrop() {
             itemName = "adrenaline"; // 肾上腺素 30%
         }
     }
-    qDebug() << "decided to spawn:" << itemName;
+    //qDebug() << "decided to spawn:" << itemName;
     auto drop = std::make_shared<DropItem>(x, itemName);
     entities.push_back(drop);
     drops.push_back(drop);
@@ -267,8 +268,18 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -2000;
         }
-        qDebug() <<"bullet spawned";
         auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1);
+        entities.push_back(bullet);
+        bullets.push_back(bullet);
+    }
+    else if (weapon == Player::WeaponType::sniper){
+        if (vx >= 0){
+            vx = 3000;
+        }
+        else if (vx < 0){
+            vx = -3000;
+        }
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }

@@ -63,18 +63,22 @@ void PlayerController::handleIntent(QString moveIntent, bool attackIntent){
                 player.lock()->weapon = Player::WeaponType::punch;
             }
         }
-        else if (player.lock()->weapon == Player::WeaponType::rifle){
-            qDebug() << "shoot bullet";
-            if (player.lock()->vx != 0){
-                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::rifle);
+        else if (player.lock()->weapon == Player::WeaponType::rifle || player.lock()->weapon == Player::WeaponType::sniper){
+            if (player.lock()->vx != 0){ // 此处步枪和狙击枪统一命令
+                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon);
             }
             else{
-                float vvx = player.lock()->x < 512 ? 1 : -1; // 自动根据人物在场景位置选择射击方向
-                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, Player::WeaponType::rifle);
+                float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
+                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon);
             }
-            player.lock()->bulletCount --;
-            if (player.lock()->bulletCount == 0){
-                player.lock()->weapon = Player::WeaponType::punch;
+            if (player.lock()->weapon == Player::WeaponType::rifle){ // 步枪检查子弹数量
+                player.lock()->bulletCount --;
+                if (player.lock()->bulletCount == 0){
+                    player.lock()->weapon = Player::WeaponType::punch;
+                }
+            }
+            else{
+                player.lock()->weapon = Player::WeaponType::punch; // 狙击枪直接失去武器
             }
         }
     }
@@ -118,6 +122,24 @@ void PlayerController::receiveHit(float damage, QString direction) {
     if (damage < 1){
         return; // 忽略极小伤害，并且不给硬直
     }
+
+    if (player.lock()->armor == Player::ArmorType::chainmail){
+        if (damage == 5){
+            return; // 免疫拳击，且不受硬直
+        }
+        else if (damage == 15){
+            damage /= 2; // 小刀伤害减半
+        }
+    }
+    else if (player.lock()->armor == Player::ArmorType::vest && player.lock()->vestHardness > 0){
+        if (damage == 30 || damage == 60){
+            damage /= 2; // 防弹衣减免一半子弹伤害，并消耗耐久度承担这部分伤害
+            player.lock()->vestHardness -= damage;
+            if (player.lock()->vestHardness <= 0){
+                player.lock()->armor = Player::ArmorType::noArmor;
+            }
+        }
+    }
     player.lock()->hp -= damage;
     cooldowns["hurt"] = 1;
     if (direction == "left"){
@@ -128,7 +150,7 @@ void PlayerController::receiveHit(float damage, QString direction) {
         player.lock()->vx = -60;
         player.lock()->vy = -400;
     }
-    qDebug() << cooldowns["hurt"] << "Player 受到伤害：" << player.lock()->hp;
+    qDebug() << cooldowns["hurt"] << "Player 受到伤害：" << damage;
     player.lock()->state.moveState = "hurt";
     player.lock()->update();
 }

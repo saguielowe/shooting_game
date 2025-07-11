@@ -17,6 +17,7 @@ void Ball::draw(QPainter& painter) {
 }
 
 void Ball::update(){
+    dt = fmin(dt, 0.033f);
     applyGravity();
     //stop();
     QPointF newPoint = position + velocity * dt;
@@ -54,15 +55,12 @@ float Ball::getDamage(){
     if (lifetime <= 0.2){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
-    qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
-    return fmin(50, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y()));
+    //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
+    return fmin(40, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y())); // 实心球是破甲伤害，削弱其最大伤害
 }
 
 bool Ball::shouldBeRemoved(){
-    if (velocity.x() * velocity.x() + velocity.y() * velocity.y() <= 2500 && lifetime >= 15){
-        return true;
-    }
-    if (lifetime >= 25) return true;
+    if (lifetime >= 15) return true;
     return false;
 }
 

@@ -66,7 +66,6 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
                     {
                         result.direction = "right";
                         result.correctedPosition = box.left();
-                        qDebug() << "Collision: Right wall with obstacle at " << box;
                     }
                 }
                 if (playerVx < 0) { // 玩家向左移动 (可能碰到左墙)
@@ -76,7 +75,7 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
                     {
                         result.direction = "left";
                         result.correctedPosition = box.right();
-                        qDebug() << "Collision: Left wall with obstacle at " << box;
+                        //qDebug() << "Collision: Left wall with obstacle at " << box;
                     }
                 }
 

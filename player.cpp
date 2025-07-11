@@ -41,7 +41,7 @@ void Player::moveLeft(){
         vx -= 4 * acceleration;
     }
     else{
-        vx = fmax(-moveSpeed, vx - acceleration); // 往左不能快于moveSpeed
+        vx = fmax(-moveSpeed * velocityratio, vx - acceleration); // 往左不能快于moveSpeed
     }
 }
 
@@ -50,11 +50,12 @@ void Player::moveRight(){
         vx += 4 * acceleration;
     }
     else{
-        vx = fmin(moveSpeed, vx + acceleration);
+        vx = fmin(moveSpeed * velocityratio, vx + acceleration);
     }
 }
 
 void Player::update(){ // player更新自身位置，animation更新自身动画
+    dt = fmin(dt, 0.033f); // 防止帧率突降时角色穿透，最多移动1/30s的距离
     if (hpRegenerate){
         if (regenerateTime > 0){
             regenerateTime -= dt;
@@ -63,7 +64,14 @@ void Player::update(){ // player更新自身位置，animation更新自身动画
         else{
             hpRegenerate = false;
             regenerateTime = 0;
+            velocityratio = 1;
         }
+    }
+    if (vx > 0 && direction == false){ // 只有当速度方向与人物朝向不一致时才更改朝向
+        direction = true;
+    }
+    else if (vx < 0 && direction == true){
+        direction = false;
     }
     bool loop = true;
     if (state.moveState == "hurt"){
@@ -115,8 +123,11 @@ void Player::update(){ // player更新自身位置，animation更新自身动画
     hitbox = animation.getTargetRect();
 }
 
-void Player::draw(QPainter& painter) { // 传窗口painter的引用
-    if (vx >= 0){
+void Player::draw(QPainter& painter, bool canHide) { // 传窗口painter的引用
+    if (canHide && state.moveState == "crouch"){
+        return;
+    }
+    if (direction){
         animation.draw(painter, x, y);
     }
     else{
@@ -160,6 +171,13 @@ void Player::weaponControll(QString type){
         velocityratio = 1.5;
         hpRegenerate = true;
         regenerateTime = 20;
+    }
+    else if (type == "chainmail"){
+        armor = ArmorType::chainmail;
+    }
+    else if (type == "vest"){
+        armor = ArmorType::vest;
+        vestHardness = 100;
     }
 }
 

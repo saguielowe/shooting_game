@@ -51,5 +51,7 @@
         <file>assets/items/medkit.png</file>
         <file>assets/items/sniper.png</file>
         <file>assets/items/bullet.png</file>
+        <file>assets/items/chainmail.png</file>
+        <file>assets/items/vest.png</file>
     </qresource>
 </RCC>

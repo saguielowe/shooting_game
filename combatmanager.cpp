@@ -36,7 +36,6 @@ void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p)
     if (e->hitbox().intersects(p->getHitbox())) {
         bool p1LeftOfP2 = e->hitbox().right() < p->getHitbox().left();
         QString dirToP2 = p1LeftOfP2 ? "right" : "left";
-        qDebug() <<"撞击！";
         e->onCollideWithPlayer(); // 多态自动决定子类行为
         p->receiveHit(e->getDamage(), dirToP2);
     }
