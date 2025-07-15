@@ -6,7 +6,8 @@ Widget::Widget(QWidget *parent)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
 {
     setFocusPolicy(Qt::StrongFocus);  // 获取键盘焦点
-    currentScene = "default";
+    currentScene = "ice";
+    Player::initSettings(false, 1.5);
     intent[0].moveIntent = "null";
     intent[0].attackIntent = false;
     intent[1].moveIntent = "null";

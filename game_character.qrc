@@ -38,9 +38,13 @@
         <file>assets/items/medkit.png</file>
         <file>assets/items/rifle.png</file>
         <file>assets/items/sniper.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_punch.png</file>
+        <file>assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_gun.png</file>
     </qresource>
     <qresource prefix="/Maps">
         <file>assets/default_map.png</file>
+        <file>assets/grass_map.png</file>
+        <file>assets/ice_map.png</file>
     </qresource>
     <qresource prefix="/items">
         <file>assets/items/knife.png</file>

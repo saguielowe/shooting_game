@@ -54,7 +54,7 @@ void Animation::update(bool loop) { // 根据play的动画组选择绘制哪一�
     }
 }
 
-void Animation::draw(QPainter& painter, float x, float y, bool flipped) { // 负责绘制，绘制哪一帧由update决定
+void Animation::draw(QPainter& painter, float x, float y, bool flipped, bool armed) { // 负责绘制，绘制哪一帧由update决定
     if (!animations.contains(currentAnim)) return;
 
     const AnimData& anim = animations[currentAnim];
@@ -79,9 +79,11 @@ void Animation::draw(QPainter& painter, float x, float y, bool flipped) { // 负
         frame = frame.transformed(QTransform().scale(-1, 1));
         // 注意翻转后也要按缩放后宽度修正 x 坐标
         painter.drawPixmap(targetRect, frame);
+        if (armed) paintWeapon(painter, targetRect);
         painter.drawRect(targetRect);
     } else {
         painter.drawPixmap(targetRect, frame);
+        if (armed) paintWeapon(painter, targetRect);
         painter.drawRect(targetRect);
     }
 }
@@ -89,3 +91,46 @@ void Animation::draw(QPainter& painter, float x, float y, bool flipped) { // 负
 QRect Animation::getTargetRect(){
     return targetRect;
 }
+
+void Animation::loadWeapon(QString weapon){
+    QString path = ":/items/assets/items/" + weapon + ".png";
+    if (weapon == "rifle" || weapon == "sniper"){
+        angle = 270;
+    }
+    else if (weapon == "knife"){
+        angle = 90;
+    }
+    QPixmap pixmap(path);
+    if (pixmap.isNull()){
+        QPixmap empty(40,20);
+        empty.fill(Qt::transparent);
+        pixmap = empty;
+    }
+    weaponImage = pixmap.scaled(40, 20, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+}
+
+void Animation::paintWeapon(QPainter &painter, QRect targetRect){
+    painter.save();
+    QPoint pos(targetRect.x() - 9, targetRect.y() + 17);
+    painter.translate(pos.x() + weaponImage.width() / 2,
+                       pos.y() + weaponImage.height() / 2);
+    painter.rotate(angle);
+    painter.translate(-weaponImage.width() / 2,
+                       -weaponImage.height() / 2);
+
+    // 绘制图像（此时已经绕中心旋转好）
+    painter.drawPixmap(0, 0, weaponImage);
+
+    // 恢复 painter 状态，避免影响其他内容
+    painter.restore();
+}
+
+void Animation::paintGun(QPainter &painter, float x, float y){
+    painter.drawPixmap(x, y, weaponImage);
+}
+/* TODO：
+ * 护甲由于移动时得携带，除非软件生成，否则要增加大量动画资源，故采取血条上显示护甲栏的方式；
+ * 武器携带时在后面手的挂点，旋转180度放置；蹲下时只绘制枪械，在前面手托举；
+ * 进攻时，拳击与小刀绘制动画；实心球暂且不绘制动画，枪械动画即为一帧托举式，随后生成对应实体。
+ * bug：不同武器挂点和旋转角不同，根据下蹲攻击与否绘制武器攻击位置。
+ */

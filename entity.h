@@ -11,6 +11,7 @@ public:
     virtual void onCollideWithPlayer(){};
     virtual float getDamage(){return 0;};
     virtual QRect hitbox(){};
+    bool getDir(){ return (velocity.x() > 0);}; // 右true，左false，用于撞击方向判断
     void stop(); // 施加阻力
     void applyGravity(); // 施加重力
     void setDt(float t); // 设置实时帧率

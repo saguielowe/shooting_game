@@ -90,7 +90,6 @@ void PlayerController::handleIntent(QString moveIntent, bool attackIntent){
         player.lock()->state.moveState = "crouch"; // 不在地面忽略
     }
 
-
     if (moveIntent == "jump" && player.lock()->onGround){
         player.lock()->state.moveState = "jump"; // 用户在地面的jump意图会使得状态变为jump，直到自动变成fall
     }
@@ -150,7 +149,7 @@ void PlayerController::receiveHit(float damage, QString direction) {
         player.lock()->vx = -60;
         player.lock()->vy = -400;
     }
-    qDebug() << cooldowns["hurt"] << "Player 受到伤害：" << damage;
+    //qDebug() << cooldowns["hurt"] << "Player 受到伤害：" << damage;
     player.lock()->state.moveState = "hurt";
     player.lock()->update();
 }

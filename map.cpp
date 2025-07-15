@@ -11,19 +11,30 @@ Map& Map::getInstance() {
 void Map::loadScene(const QString& sceneName, QPainter& painter) {
     // qDebug() << "Loading scene: " << sceneName;
     currentSceneName = sceneName;
-    map = QPixmap(":/Maps/assets/default_map.png");
+    map = QPixmap(":/Maps/assets/" + sceneName + "_map.png");
     painter.drawPixmap(QRect(0, 0, map.width(), map.height()), map);
     collisionBox.clear(); // 清除旧的碰撞箱
 
     // 根据场景名称加载不同的碰撞箱数据
-    if (sceneName == "default") {
+    if (sceneName == "ice") {
         collisionBox << QRect(372, 668, 253, 178) << QRect(238, 248, 534, 44)
                      << QRect(592, 475, 490, 48) << QRect(0, 846, 1024, 56)
                      << QRect(0, 474, 425, 48) << QRect(0, 0, 20, 956)
                      << QRect(1004, 0, 20, 956);
-        painter.drawRects(collisionBox);
     }
-
+    else if (sceneName == "default"){
+        collisionBox << QRect(591, 499, 411, 54) << QRect(17, 498, 401, 56)
+                     << QRect(368, 705, 259, 192) << QRect(17, 897, 990, 61)
+                     << QRect(221, 267, 563, 44) << QRect(0, 0, 20, 956)
+                     << QRect(1004, 0, 20, 956);
+    }
+    else if (sceneName == "grass"){
+        collisionBox << QRect(221, 267, 560, 61) << QRect(17, 491, 401, 57)
+                     << QRect(590, 491, 409, 57) << QRect(365, 704, 264, 247)
+                     << QRect(20, 874, 982, 77) << QRect(0, 0, 20, 956)
+                     << QRect(1004, 0, 20, 956);
+    }
+    painter.drawRects(collisionBox);
 }
 
 const QVector<QRect>& Map::getCollisionBoxes() const {
