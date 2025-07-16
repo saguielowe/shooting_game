@@ -1,19 +1,31 @@
 #include "widget.h"
+#include <QMessageBox>
+#include <QPushButton>
+#include <QLabel>
 #include "./ui_widget.h"
 
-Widget::Widget(QWidget *parent)
-    : QWidget(parent)
+Widget::Widget(const QString& scene, int maxHp, int maxBalls, QWidget *parent)
+    : QWidget(parent), currentScene(scene), m_maxHp(maxHp), m_maxBalls(maxBalls)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
 {
     setFocusPolicy(Qt::StrongFocus);  // 获取键盘焦点
-    currentScene = "ice";
-    Player::initSettings(false, 1.5);
+    if (currentScene == "ice"){
+        Player::initSettings(false, 1.5, maxHp, maxBalls);
+    }
+    else if (currentScene == "grass"){
+        Player::initSettings(true, 1.0, maxHp, maxBalls);
+    }
+    else{
+        Player::initSettings(false, 1.0, maxHp, maxBalls);
+    }
+    scenePixmap = Map::getInstance().loadScene(scene);
+    //qDebug() <<"scene loaded";
     intent[0].moveIntent = "null";
     intent[0].attackIntent = false;
     intent[1].moveIntent = "null";
     intent[1].attackIntent = false;
-    auto p1 = std::make_shared<Player>(100, 600);
-    auto p2 = std::make_shared<Player>(800, 600);
+    auto p1 = std::make_shared<Player>(100, 600, 0);
+    auto p2 = std::make_shared<Player>(800, 600, 1);
 
     auto c1 = std::make_shared<PlayerController>();
     auto c2 = std::make_shared<PlayerController>();
@@ -26,6 +38,7 @@ Widget::Widget(QWidget *parent)
 
     controllers.push_back(c1);
     controllers.push_back(c2);
+    //qDebug() <<"player spawned";
 
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
@@ -35,15 +48,27 @@ Widget::Widget(QWidget *parent)
             this, &Widget::onPlayerRequest);
     timer->start(16);  // 约 60fps
     lastTime.start();
+    //qDebug() <<"timer started";
     ui->setupUi(this);
 }
 void Widget::paintEvent(QPaintEvent*) {
     QPainter painter(this);
-    Map::getInstance().loadScene(currentScene, painter); // 需要绘制的内容：地图（交给map）、玩家（交给player）
-    players[0]->draw(painter);
-    players[1]->draw(painter);
+    if (!scenePixmap.isNull()) {
+        painter.drawPixmap(0, 0, scenePixmap);
+    }
+
+    if (players.size() > 0 && players[0]) {
+        players[0]->draw(painter);
+    }
+    if (players.size() > 1 && players[1]) {
+        players[1]->draw(painter);
+    }
+
+    // 保护 entities
     for (const auto& entity : entities) {
-        entity->draw(painter);
+        if (entity) {
+            entity->draw(painter);
+        }
     }
 }
 /*
@@ -55,6 +80,7 @@ inputIntent: 输入意图。
 其中，边跑边跳是由于既有运动状态导致的，不是玩家输入意图所必然导致的，此处不考虑也不存储这一意图。
 */
 void Widget::keyPressEvent(QKeyEvent* event) {
+    emit keyPressed();
     if (event->key() == Qt::Key_A) {
         intent[0].moveIntent = "moving_left"; // 同时按下左右键优先处理左键
     }
@@ -126,10 +152,8 @@ void Widget::gameLoop() {
                                      [](const std::shared_ptr<PlayerController>& c) {
                                          return c->isOrphaned();  // ✅ 玩家已被销毁
                                      }), controllers.end());
-    // TODO:
-    // 如果只有一个玩家结束游戏循环，否则造成访问越界
     if (players.length() < 2){
-        gameEnd();
+        gameEnd(players[0]->id);
         return;
     }
     players[0]->setDt(dt); // 万一卡顿根据真实帧数设置dt
@@ -239,9 +263,50 @@ Widget::~Widget()
     delete ui;
 }
 
-void Widget::gameEnd(){
-    timer->stop();
-    qDebug() << "game is over";
+void Widget::gameEnd(int id)
+{
+    // 1. 停掉计时器，断掉信号，避免旧逻辑还在跑
+    if (timer) {
+        timer->stop();
+        disconnect(timer, nullptr, this, nullptr);
+    }
+    disconnect(this, nullptr, nullptr, nullptr);
+
+    // 2. 不要提前清空 players/entities！
+    //    先留着，paintEvent 还能画最后一帧完整画面
+    // controllers.clear();
+    // players.clear();
+    // entities.clear();
+
+    // 3. 叠加 Game Over 遮罩
+    QLabel *overlay = new QLabel(this);
+    overlay->setGeometry(rect());
+    overlay->setStyleSheet(
+        "background: rgba(0, 0, 0, 160);"
+        "color: white;"
+        "font-size: 40px;"
+        "font-weight: bold;"
+        );
+    overlay->setAlignment(Qt::AlignCenter);
+    overlay->setText("玩家"+ QString::number(2-id) +"死亡！\n\nGAME OVER\n\n按任意键重新开始");
+    overlay->show();
+
+    // 4. 抢键盘焦点，捕捉“任意键”
+    grabKeyboard();
+
+    // ✅ 用一次性连接，避免多次触发
+    connect(this, &Widget::keyPressed, this, [=]() mutable {
+        releaseKeyboard();  // 释放键盘
+
+        // 5. 延迟一帧再新建，保证事件栈安全退出
+        QTimer::singleShot(0, this, [=]() mutable {
+            // ✅ 新建干净的 Widget（它自己会加载地图/初始化状态）
+            Widget *newGame = new Widget(currentScene, m_maxHp, m_maxBalls);
+            newGame->setFixedSize(this->size());
+            newGame->show();
+            newGame->setFocus();   // ✅ 立刻接收输入
+        });
+    });
 }
 
 void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon) {

@@ -2,7 +2,7 @@
 #define MAP_H
 #include <QVector>
 #include <QRect>
-#include <QPainter>
+#include <QPixmap>
 #include "CollisionResult.h"
 class Map
 {
@@ -11,7 +11,7 @@ public:
     static Map& getInstance();
 
     // 根据场景名称加载地图数据
-    void loadScene(const QString& sceneName, QPainter& painter);
+    QPixmap loadScene(const QString& sceneName);
 
     // 获取碰撞箱数据供其他类使用
     const QVector<QRect>& getCollisionBoxes() const;

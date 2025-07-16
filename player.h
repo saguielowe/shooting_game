@@ -8,7 +8,7 @@
 class Player
 {
 public:
-    Player(float x, float y);
+    Player(float x, float y, int id); // id=1 左，id=2 右
     void update();         // 每帧更新位置
     void jump();
     void crouch();
@@ -34,11 +34,12 @@ public:
 
     float x, y, dt;
     float vx = 0, vy = 0;
-    float hp = 100;
+    float hp = maxHp;
     int ballCount = 0, bulletCount = 0;
     bool hpRegenerate = false; // 回血状态
     bool direction = 1; // 1：右，0：左
     float regenerateTime = 0;
+    const int id;
     QRect hitbox;
 
     enum class WeaponType{
@@ -53,9 +54,11 @@ public:
     int vestHardness = 100;
 
     void draw(QPainter& painter); // 可以隐藏的场景如草地
-    static void initSettings(bool canHide, float v){
+    static void initSettings(bool canHide, float v, float maxHP, int balls){
         Player::canHide = canHide;
         velocityratio = v;
+        maxHp = maxHP;
+        maxBalls = balls;
     } // 调整游戏基础数值
     /* mode=0 正常模式
      * mode=1 投掷模式：实心球可投掷数量翻倍
@@ -76,9 +79,10 @@ private:
     static float velocityratio; // 最大移速倍率，全局生效
     float selfvelocityratio = 1; // 受肾上腺素影响的倍率
 
-    float maxHp=100;
-    const int maxBalls = 3;
+    static float maxHp;
+    static int maxBalls;
     const int maxBullets = 3;
+
 };
 
 #endif // PLAYER_H

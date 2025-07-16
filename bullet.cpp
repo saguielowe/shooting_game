@@ -12,7 +12,7 @@ Bullet::Bullet(QPointF pos, float vx, int type) : Entity(pos), type(type) {
 void Bullet::draw(QPainter& painter) {
     painter.drawPixmap(position.x(), position.y(), pixmap);
     painter.setBrush(Qt::NoBrush);
-    painter.drawRect(position.x(), position.y(), pixmap.width(), pixmap.height());
+    //painter.drawRect(position.x(), position.y(), pixmap.width(), pixmap.height());
 }
 
 void Bullet::update(){

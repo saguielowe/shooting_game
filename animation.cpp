@@ -79,12 +79,12 @@ void Animation::draw(QPainter& painter, float x, float y, bool flipped, bool arm
         frame = frame.transformed(QTransform().scale(-1, 1));
         // 注意翻转后也要按缩放后宽度修正 x 坐标
         painter.drawPixmap(targetRect, frame);
-        if (armed) paintWeapon(painter, targetRect);
-        painter.drawRect(targetRect);
+        if (armed && currentAnim != "knife") paintWeapon(painter, targetRect);
+        //painter.drawRect(targetRect);
     } else {
         painter.drawPixmap(targetRect, frame);
-        if (armed) paintWeapon(painter, targetRect);
-        painter.drawRect(targetRect);
+        if (armed && currentAnim != "knife") paintWeapon(painter, targetRect);
+        //painter.drawRect(targetRect);
     }
 }
 

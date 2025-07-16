@@ -13,7 +13,7 @@ Ball::Ball(QPointF pos, QPointF v) : Entity(pos) {
 void Ball::draw(QPainter& painter) {
     painter.drawPixmap(position.x(), position.y(), pixmap);
     painter.setBrush(Qt::NoBrush);
-    painter.drawRect(position.x(), position.y(), pixmap.width(), pixmap.height());
+    //painter.drawRect(position.x(), position.y(), pixmap.width(), pixmap.height());
 }
 
 void Ball::update(){

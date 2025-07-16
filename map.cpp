@@ -8,11 +8,10 @@ Map& Map::getInstance() {
     return instance;
 }
 
-void Map::loadScene(const QString& sceneName, QPainter& painter) {
+QPixmap Map::loadScene(const QString& sceneName) {
     // qDebug() << "Loading scene: " << sceneName;
     currentSceneName = sceneName;
     map = QPixmap(":/Maps/assets/" + sceneName + "_map.png");
-    painter.drawPixmap(QRect(0, 0, map.width(), map.height()), map);
     collisionBox.clear(); // 清除旧的碰撞箱
 
     // 根据场景名称加载不同的碰撞箱数据
@@ -34,7 +33,7 @@ void Map::loadScene(const QString& sceneName, QPainter& painter) {
                      << QRect(20, 874, 982, 77) << QRect(0, 0, 20, 956)
                      << QRect(1004, 0, 20, 956);
     }
-    painter.drawRects(collisionBox);
+    return map;
 }
 
 const QVector<QRect>& Map::getCollisionBoxes() const {
@@ -99,4 +98,3 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
         }
     return result;
 }
-

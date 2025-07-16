@@ -41,7 +41,7 @@ void DropItem::draw(QPainter& painter) {
 
     painter.drawPixmap(position.x(), position.y(), pixmap);
     painter.setBrush(Qt::NoBrush);
-    painter.drawRect(hitbox());
+    //painter.drawRect(hitbox());
 }
 
 QRect DropItem::hitbox(){

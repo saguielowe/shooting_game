@@ -2,8 +2,9 @@
 #include <QDebug>
 float Player::velocityratio = 1;
 bool Player::canHide = false;
-
-Player::Player(float x, float y) : x(x), y(y) {
+float Player::maxHp = 100;
+int Player::maxBalls = 3;
+Player::Player(float x, float y, int id) : x(x), y(y), id(id) {
     qDebug()<<"loading animation assets……";
     animation.load("idle", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Idle.png", 120, 10);
     animation.load("run", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Run.png", 120, 10);
@@ -155,13 +156,13 @@ void Player::draw(QPainter& painter) { // 传窗口painter的引用
     }
 
     if (direction){
-        animation.draw(painter, x, y, false, state.moveState == "null");
-        if (state.shootState && (weapon == WeaponType::rifle || weapon == WeaponType::sniper)){
-            animation.paintGun(painter, x+53, y+12);
-        }
+        animation.draw(painter, x, y, false, (state.moveState == "null") && (!state.shootState));
+        // if (state.shootState && (weapon == WeaponType::rifle || weapon == WeaponType::sniper)){
+        //     animation.paintGun(painter, x+53, y+12);
+        // }
     }
     else{
-        animation.draw(painter, x, y, true, state.moveState == "null"); // 播放动画
+        animation.draw(painter, x, y, true, (state.moveState == "null") && (!state.shootState)); // 播放动画
     }
     // 绘制灰色背景
     QRect backgroundRect(hitbox.left(), hitbox.top() - 20, 100, 15);
@@ -174,6 +175,7 @@ void Player::draw(QPainter& painter) { // 传窗口painter的引用
     painter.setBrush(Qt::red);
     painter.drawRect(healthRect);
     painter.drawText(healthRect, QString::number(int(hp)));
+    painter.drawText(hitbox.left() - 10, hitbox.top(), (id?"右":"左"));
 
     if (armor == ArmorType::noArmor) return;
 
@@ -200,14 +202,14 @@ void Player::weaponControll(QString type){
         ballCount = maxBalls;
     }
     else if (type == "bandage"){
-        hp = fmin(hp + 30, 100);
+        hp = fmin(hp + 30, maxHp);
     }
     else if (type == "rifle"){
         weapon = WeaponType::rifle;
         bulletCount = maxBullets;
     }
     else if (type == "medkit"){
-        hp = 100;
+        hp = maxHp;
     }
     else if (type == "sniper"){
         weapon = WeaponType::sniper;
