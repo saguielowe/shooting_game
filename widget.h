@@ -26,7 +26,7 @@ class Widget : public QWidget
     Q_OBJECT
 
 public:
-    Widget(const QString& scene, int maxHp, int maxBalls, QWidget *parent = nullptr);
+    Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, int maxSnipers, QWidget *parent = nullptr);
     void updateDrops(float dt);
     void updateBalls(float dt);
     void drawDrops(QPainter& painter);
@@ -68,8 +68,7 @@ private:
     bool keyLeft = false, keyRight = false, crouching = false; // 辅助变量来判断玩家的按键输入对应哪种状态
     Ui::Widget *ui;
 
-    int m_maxHp;
-    int m_maxBalls;
+    int m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers;
     QPixmap scenePixmap;
 };
 #endif // WIDGET_H

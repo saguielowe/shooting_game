@@ -1,6 +1,7 @@
 #include "ball.h"
 #include "map.h"
 #include "CollisionResult.h"
+#include "soundmanager.h"
 #include <QPixmap>
 #include <QDebug>
 Ball::Ball(QPointF pos, QPointF v) : Entity(pos) {
@@ -26,6 +27,7 @@ void Ball::update(){
     if (collision_ret.direction == "ground"){
         onGround = true;
         velocity.setY(- velocity.y() / 2);
+        if (lifetime < 5) SoundManager::instance().play("crash", 0.2);
     }
     else{
         onGround = false;
@@ -33,14 +35,17 @@ void Ball::update(){
 
     if (collision_ret.direction == "ceiling") {
         velocity.setY(- velocity.y() / 2);
+        SoundManager::instance().play("crash", 0.2);
     }
 
     if (collision_ret.direction == "right") {
         velocity.setX(- velocity.x() / 2);
+        if (lifetime < 5) SoundManager::instance().play("crash", 0.2);
     }
 
     if (collision_ret.direction == "left") {
         velocity.setX(- velocity.x() / 2);
+        if (lifetime < 5) SoundManager::instance().play("crash", 0.2);
     }
 
     position += velocity * dt;

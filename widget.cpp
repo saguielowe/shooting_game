@@ -1,25 +1,31 @@
 #include "widget.h"
+#include "soundmanager.h"
 #include <QMessageBox>
 #include <QPushButton>
 #include <QLabel>
 #include "./ui_widget.h"
 
-Widget::Widget(const QString& scene, int maxHp, int maxBalls, QWidget *parent)
-    : QWidget(parent), currentScene(scene), m_maxHp(maxHp), m_maxBalls(maxBalls)
+Widget::Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, int maxSnipers, QWidget *parent)
+    : QWidget(parent), currentScene(scene), m_maxHp(maxHp), m_maxBalls(maxBalls), m_maxBullets(maxBullets), m_maxSnipers(maxSnipers)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
 {
     setFocusPolicy(Qt::StrongFocus);  // 获取键盘焦点
     if (currentScene == "ice"){
-        Player::initSettings(false, 1.5, maxHp, maxBalls);
+        Player::initSettings(false, 1.5, maxHp, maxBalls, maxBullets, maxSnipers);
     }
     else if (currentScene == "grass"){
-        Player::initSettings(true, 1.0, maxHp, maxBalls);
+        Player::initSettings(true, 1.0, maxHp, maxBalls, maxBullets, maxSnipers);
     }
     else{
-        Player::initSettings(false, 1.0, maxHp, maxBalls);
+        Player::initSettings(false, 1.0, maxHp, maxBalls, maxBullets, maxSnipers);
     }
     scenePixmap = Map::getInstance().loadScene(scene);
     //qDebug() <<"scene loaded";
+    SoundManager::instance().preload("crash");
+    SoundManager::instance().preload("rifle");
+    SoundManager::instance().preload("knife");
+    SoundManager::instance().preload("sniper");
+    SoundManager::instance().preload("hit");
     intent[0].moveIntent = "null";
     intent[0].attackIntent = false;
     intent[1].moveIntent = "null";
@@ -301,7 +307,7 @@ void Widget::gameEnd(int id)
         // 5. 延迟一帧再新建，保证事件栈安全退出
         QTimer::singleShot(0, this, [=]() mutable {
             // ✅ 新建干净的 Widget（它自己会加载地图/初始化状态）
-            Widget *newGame = new Widget(currentScene, m_maxHp, m_maxBalls);
+            Widget *newGame = new Widget(currentScene, m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers);
             newGame->setFixedSize(this->size());
             newGame->show();
             newGame->setFocus();   // ✅ 立刻接收输入

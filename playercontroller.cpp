@@ -1,4 +1,5 @@
 #include "playercontroller.h"
+#include "soundmanager.h"
 #include <QDebug>
 PlayerController::PlayerController(){
     cooldowns["attack"] = 0; // =0代表冷却已到，单位秒
@@ -71,15 +72,15 @@ void PlayerController::handleIntent(QString moveIntent, bool attackIntent){
                 float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
                 emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon);
             }
-            if (player.lock()->weapon == Player::WeaponType::rifle){ // 步枪检查子弹数量
-                player.lock()->bulletCount --;
-                if (player.lock()->bulletCount == 0){
-                    player.lock()->weapon = Player::WeaponType::punch;
-                }
+            if (player.lock()->weapon == Player::WeaponType::rifle) SoundManager::instance().play("rifle", 0.4);
+            if (player.lock()->weapon == Player::WeaponType::sniper) SoundManager::instance().play("sniper", 0.6);
+            player.lock()->bulletCount --;
+            if (player.lock()->bulletCount == 0){
+                player.lock()->weapon = Player::WeaponType::punch;
             }
-            else{
-                player.lock()->weapon = Player::WeaponType::punch; // 狙击枪直接失去武器
-            }
+        }
+        else if (player.lock()->weapon == Player::WeaponType::knife){
+            SoundManager::instance().play("knife", 0.4);
         }
     }
     else{
@@ -139,6 +140,7 @@ void PlayerController::receiveHit(float damage, QString direction) {
             }
         }
     }
+    SoundManager::instance().play("hit", 0.5);
     player.lock()->hp -= damage;
     cooldowns["hurt"] = 1;
     if (direction == "left"){

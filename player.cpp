@@ -4,6 +4,8 @@ float Player::velocityratio = 1;
 bool Player::canHide = false;
 float Player::maxHp = 100;
 int Player::maxBalls = 3;
+int Player::maxBullets = 3;
+int Player::maxSnipers = 1;
 Player::Player(float x, float y, int id) : x(x), y(y), id(id) {
     qDebug()<<"loading animation assets……";
     animation.load("idle", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Idle.png", 120, 10);
@@ -65,7 +67,7 @@ void Player::update(){ // player更新自身位置，animation更新自身动画
     if (hpRegenerate){
         if (regenerateTime > 0){
             regenerateTime -= dt;
-            hp = fmin(100, hp + 3 * dt);
+            hp = fmin(maxHp, hp + 3 * dt);
         }
         else{
             hpRegenerate = false;
@@ -213,6 +215,7 @@ void Player::weaponControll(QString type){
     }
     else if (type == "sniper"){
         weapon = WeaponType::sniper;
+        bulletCount = maxSnipers;
     }
     else if (type == "adrenaline"){
         selfvelocityratio = 1.2;

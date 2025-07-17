@@ -40,6 +40,22 @@ int main(int argc, char *argv[])
     layout->addWidget(ballLabel);
     layout->addWidget(ballSpin);
 
+    // 射击上限
+    QLabel *bulletLabel = new QLabel("手枪射击上限：");
+    QSpinBox *bulletSpin = new QSpinBox;
+    bulletSpin->setRange(1, 50);
+    bulletSpin->setValue(3);
+    layout->addWidget(bulletLabel);
+    layout->addWidget(bulletSpin);
+
+    // 射击上限
+    QLabel *sniperLabel = new QLabel("狙击枪射击上限：");
+    QSpinBox *sniperSpin = new QSpinBox;
+    sniperSpin->setRange(1, 50);
+    sniperSpin->setValue(1);
+    layout->addWidget(sniperLabel);
+    layout->addWidget(sniperSpin);
+
     // OK / Cancel 按钮
     QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttons);
@@ -51,9 +67,11 @@ int main(int argc, char *argv[])
         QString selectedScene = sceneCombo->currentText();
         int maxHp = hpSpin->value();
         int maxBalls = ballSpin->value();
+        int maxBullets = bulletSpin->value();
+        int maxSnipers = sniperSpin->value();
 
         // 创建游戏窗口并传参
-        Widget w(selectedScene, maxHp, maxBalls);
+        Widget w(selectedScene, maxHp, maxBalls, maxBullets, maxSnipers);
         w.setFixedSize(1024, 956);
         w.show();
         return a.exec();

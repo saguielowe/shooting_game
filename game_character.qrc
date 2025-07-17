@@ -58,4 +58,11 @@
         <file>assets/items/chainmail.png</file>
         <file>assets/items/vest.png</file>
     </qresource>
+    <qresource prefix="/sounds">
+        <file>assets/sounds/crash.wav</file>
+        <file>assets/sounds/rifle.wav</file>
+        <file>assets/sounds/knife.wav</file>
+        <file>assets/sounds/sniper.wav</file>
+        <file>assets/sounds/hit.wav</file>
+    </qresource>
 </RCC>

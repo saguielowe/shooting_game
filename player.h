@@ -54,11 +54,13 @@ public:
     int vestHardness = 100;
 
     void draw(QPainter& painter); // 可以隐藏的场景如草地
-    static void initSettings(bool canHide, float v, float maxHP, int balls){
+    static void initSettings(bool canHide, float v, float maxHP, int balls, int bullets, int snipers){
         Player::canHide = canHide;
         velocityratio = v;
         maxHp = maxHP;
         maxBalls = balls;
+        maxBullets = bullets;
+        maxSnipers = snipers;
     } // 调整游戏基础数值
     /* mode=0 正常模式
      * mode=1 投掷模式：实心球可投掷数量翻倍
@@ -81,7 +83,8 @@ private:
 
     static float maxHp;
     static int maxBalls;
-    const int maxBullets = 3;
+    static int maxBullets;
+    static int maxSnipers;
 
 };
 
