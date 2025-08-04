@@ -26,9 +26,9 @@ Widget::Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, in
     SoundManager::instance().preload("knife");
     SoundManager::instance().preload("sniper");
     SoundManager::instance().preload("hit");
-    intent[0].moveIntent = "null";
+    intent[0].moveIntent = MoveIntent::NONE;
     intent[0].attackIntent = false;
-    intent[1].moveIntent = "null";
+    intent[1].moveIntent = MoveIntent::NONE;
     intent[1].attackIntent = false;
     auto p1 = std::make_shared<Player>(100, 600, 0);
     auto p2 = std::make_shared<Player>(800, 600, 1);
@@ -55,6 +55,10 @@ Widget::Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, in
     timer->start(16);  // 约 60fps
     lastTime.start();
     //qDebug() <<"timer started";
+    ai->setAIPlayer(players[1]);        // AI控制的玩家
+    ai->setTargetPlayer(players[0]);    // 人类玩家
+    ai->setFollowDistance(80.0f);    // 跟随距离
+    ai->setDifficulty(5);            // 难度1-10
     ui->setupUi(this);
 }
 void Widget::paintEvent(QPaintEvent*) {
@@ -76,6 +80,8 @@ void Widget::paintEvent(QPaintEvent*) {
             entity->draw(painter);
         }
     }
+
+    ai->draw(painter);
 }
 /*
 inputIntent: 输入意图。
@@ -88,19 +94,19 @@ inputIntent: 输入意图。
 void Widget::keyPressEvent(QKeyEvent* event) {
     emit keyPressed();
     if (event->key() == Qt::Key_A) {
-        intent[0].moveIntent = "moving_left"; // 同时按下左右键优先处理左键
+        intent[0].moveIntent = MoveIntent::MOVING_LEFT; // 同时按下左右键优先处理左键
     }
     else if (event->key() == Qt::Key_D) {
-        intent[0].moveIntent = "moving_right";
+        intent[0].moveIntent = MoveIntent::MOVING_RIGHT;
     }
     else if (event->key() == Qt::Key_W) {
-        intent[0].moveIntent = "jump";
+        intent[0].moveIntent = MoveIntent::JUMP;
     }
     else if (event->key() == Qt::Key_S) { // player部分默认已经在widget处检查过合法状态转移
-        intent[0].moveIntent = "crouch";
+        intent[0].moveIntent = MoveIntent::CROUCH;
     }
     else {
-        intent[0].moveIntent = "null";
+        intent[0].moveIntent = MoveIntent::NONE;
     }
 
     if (event->key() == Qt::Key_E) {
@@ -111,19 +117,19 @@ void Widget::keyPressEvent(QKeyEvent* event) {
     }
 
     if (event->key() == Qt::Key_J) {
-        intent[1].moveIntent = "moving_left"; // 同时按下左右键优先处理左键
+        intent[1].moveIntent = MoveIntent::MOVING_LEFT; // 同时按下左右键优先处理左键
     }
     else if (event->key() == Qt::Key_L) {
-        intent[1].moveIntent = "moving_right";
+        intent[1].moveIntent = MoveIntent::MOVING_RIGHT;
     }
     else if (event->key() == Qt::Key_I) {
-        intent[1].moveIntent = "jump";
+        intent[1].moveIntent = MoveIntent::JUMP;
     }
     else if (event->key() == Qt::Key_K) { // player部分默认已经在widget处检查过合法状态转移
-        intent[1].moveIntent = "crouch";
+        intent[1].moveIntent = MoveIntent::CROUCH;
     }
     else {
-        intent[1].moveIntent = "null";
+        intent[1].moveIntent = MoveIntent::NONE;
     }
 
     if (event->key() == Qt::Key_O) {
@@ -134,11 +140,11 @@ void Widget::keyPressEvent(QKeyEvent* event) {
 
 void Widget::keyReleaseEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_A || event->key() == Qt::Key_S || event->key() == Qt::Key_W || event->key() == Qt::Key_D) {
-        intent[0].moveIntent = "null";
+        intent[0].moveIntent = MoveIntent::NONE;
     }
 
     if (event->key() == Qt::Key_J || event->key() == Qt::Key_K || event->key() == Qt::Key_L || event->key() == Qt::Key_I) {
-        intent[1].moveIntent = "null";
+        intent[1].moveIntent = MoveIntent::NONE;
     }
 
 }
@@ -164,6 +170,15 @@ void Widget::gameLoop() {
     }
     players[0]->setDt(dt); // 万一卡顿根据真实帧数设置dt
     players[1]->setDt(dt);
+
+    MoveIntent moveIntent = MoveIntent::NONE;
+    AttackIntent attackIntent = false;
+
+    ai->updateIntent(moveIntent, attackIntent);
+
+    intent[1].moveIntent = moveIntent;
+    intent[1].attackIntent = attackIntent;
+    qDebug() << moveIntent << attackIntent;
     controllers[0]->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
     controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
     cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
@@ -234,11 +249,11 @@ void Widget::updateDrops(float dt){
             qDebug() <<"here is a fucking nullptr";
             return;
         }
-        if (drop.lock()->isCollectedBy(players[0].get()) && intent[0].moveIntent == "crouch") {
+        if (drop.lock()->isCollectedBy(players[0].get()) && intent[0].moveIntent == MoveIntent::CROUCH) {
             drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
             players[0]->weaponControll(drop.lock()->itemType);
         }
-        else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == "crouch") {
+        else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == MoveIntent::CROUCH) {
             drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
             players[1]->weaponControll(drop.lock()->itemType);
         }

@@ -23,6 +23,8 @@ set(PROJECT_SOURCES
 qt_add_resources(GAME_RESOURCES Resources/game_character.qrc)
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
+    find_package(Qt6 REQUIRED COMPONENTS Core)
+
     qt_add_executable(shooting_game
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
@@ -38,6 +40,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ball.h ball.cpp
         bullet.h bullet.cpp
         soundmanager.h soundmanager.cpp
+        gameai.h gameai.cpp
     )
 else()
     if(ANDROID)
@@ -53,6 +56,7 @@ target_link_libraries(shooting_game
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Multimedia
 )
+target_link_libraries(shooting_game PRIVATE Qt6::Core)
 
 # ✅ 下面这些不用动
 if(${QT_VERSION} VERSION_LESS 6.1.0)

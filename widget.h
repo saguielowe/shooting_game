@@ -14,6 +14,7 @@
 #include "dropitem.h"
 #include "bullet.h"
 #include <QRandomGenerator>
+#include "gameai.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -47,7 +48,7 @@ private:
     void gameEnd(int id);
 
     struct inputIntent {
-        QString moveIntent;
+        MoveIntent moveIntent;
         bool attackIntent;
     };
     inputIntent intent[2];
@@ -66,6 +67,7 @@ private:
 
     QString currentScene;
     bool keyLeft = false, keyRight = false, crouching = false; // 辅助变量来判断玩家的按键输入对应哪种状态
+    std::shared_ptr<GameAI> ai = std::make_shared<GameAI>(); // 赋空初始值
     Ui::Widget *ui;
 
     int m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers;

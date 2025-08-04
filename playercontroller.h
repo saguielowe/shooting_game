@@ -15,7 +15,7 @@ public:
     bool isOrphaned() const {
         return player.lock() == nullptr; // ✅ 玩家已被销毁
     }
-    void handleIntent(QString moveIntent, bool attackIntent);
+    void handleIntent(MoveIntent moveIntent, bool attackIntent);
     void receiveHit(float damage, QString direction);
     QRect getHitbox();
     bool canAttack() const { return player.lock()->state.shootState; }

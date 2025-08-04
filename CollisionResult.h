@@ -10,5 +10,11 @@ struct CollisionResult {
     float correctedPosition; // 玩家应移动到的位置（如修正后的 y）
     QRect obstacleBox;         // 撞上的障碍物（可选，用于判断平台属性等）
 };
-
+enum class MoveIntent {
+    NONE,
+    MOVING_LEFT,
+    MOVING_RIGHT,
+    CROUCH,
+    JUMP
+};
 #endif // COLLISIONRESULT_H

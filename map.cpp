@@ -1,4 +1,5 @@
 #include "map.h"
+#include <queue>
 #include <QDebug>
 #include <QPixmap>
 Map::Map() {}
@@ -20,18 +21,67 @@ QPixmap Map::loadScene(const QString& sceneName) {
                      << QRect(592, 475, 490, 48) << QRect(0, 846, 1024, 56)
                      << QRect(0, 474, 425, 48) << QRect(0, 0, 20, 956)
                      << QRect(1004, 0, 20, 956);
+        accessPlatforms.resize(5); // 5个平台编号为 0~4
+        accessPlatforms[0].push_back(2);
+        accessPlatforms[0].push_back(3);
+        accessPlatforms[0].push_back(4);
+
+        accessPlatforms[1].push_back(2);
+        accessPlatforms[1].push_back(4);
+
+        accessPlatforms[2].push_back(0);
+        accessPlatforms[2].push_back(1);
+
+        accessPlatforms[3].push_back(0);
+
+        accessPlatforms[4].push_back(0);
+        accessPlatforms[4].push_back(1);
+
     }
     else if (sceneName == "default"){
-        collisionBox << QRect(591, 499, 411, 54) << QRect(17, 498, 401, 56)
-                     << QRect(368, 705, 259, 192) << QRect(17, 897, 990, 61)
-                     << QRect(221, 267, 563, 44) << QRect(0, 0, 20, 956)
-                     << QRect(1004, 0, 20, 956);
+        collisionBox << QRect(368, 705, 259, 192) << QRect(221, 267, 563, 44)
+                     << QRect(591, 499, 411, 54) << QRect(17, 897, 351, 61)
+                     << QRect(17, 498, 401, 56) << QRect(0, 0, 20, 956)
+                     << QRect(1004, 0, 20, 956) << QRect(627, 897, 380, 61);
+        accessPlatforms.resize(8); // 5个平台编号为 0~4
+        accessPlatforms[0].push_back(2);
+        accessPlatforms[0].push_back(3);
+        accessPlatforms[0].push_back(4);
+        accessPlatforms[0].push_back(7);
+
+        accessPlatforms[1].push_back(2);
+        accessPlatforms[1].push_back(4);
+
+        accessPlatforms[2].push_back(0);
+        accessPlatforms[2].push_back(1);
+
+        accessPlatforms[3].push_back(0);
+
+        accessPlatforms[4].push_back(0);
+        accessPlatforms[4].push_back(1);
+
+        accessPlatforms[7].push_back(0);
     }
     else if (sceneName == "grass"){
-        collisionBox << QRect(221, 267, 560, 61) << QRect(17, 491, 401, 57)
-                     << QRect(590, 491, 409, 57) << QRect(365, 704, 264, 247)
-                     << QRect(20, 874, 982, 77) << QRect(0, 0, 20, 956)
+        collisionBox << QRect(365, 704, 264, 247) << QRect(221, 267, 560, 61)
+                     << QRect(590, 491, 409, 57) << QRect(20, 874, 982, 77)
+                     << QRect(17, 491, 401, 57) << QRect(0, 0, 20, 956)
                      << QRect(1004, 0, 20, 956);
+        accessPlatforms.resize(5); // 5个平台编号为 0~4
+        accessPlatforms[0].push_back(2);
+        accessPlatforms[0].push_back(3);
+        accessPlatforms[0].push_back(4);
+
+        accessPlatforms[1].push_back(2);
+        accessPlatforms[1].push_back(4);
+
+        accessPlatforms[2].push_back(0);
+        accessPlatforms[2].push_back(1);
+
+        accessPlatforms[3].push_back(0);
+
+        accessPlatforms[4].push_back(0);
+        accessPlatforms[4].push_back(1);
     }
     return map;
 }
@@ -97,4 +147,108 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
             }
         }
     return result;
+}
+
+int Map::findPath(QPointF start, QPointF target){
+    int currentPlatform = checkPlatform(start);
+    int targetPlatform = checkPlatform(target);
+    if (currentPlatform == targetPlatform && currentPlatform != -1){ // 如果在同一平台，那么直接过去
+        return targetPlatform;
+    }
+    else if (targetPlatform != -1 && currentPlatform != -1){ // 在空中没法判断
+        int nextPlatform = getNextPlatform(currentPlatform, targetPlatform);
+        return nextPlatform;
+    }
+    return -1;
+}
+
+QPointF Map::findTarget(QPointF start, int nextPlatform){
+    QPointF leftTarget = QPointF(collisionBox[nextPlatform].x() + 80, collisionBox[nextPlatform].y() - 60);
+    QPointF rightTarget = QPointF(collisionBox[nextPlatform].x() + collisionBox[nextPlatform].width() - 80, collisionBox[nextPlatform].y() - 60);
+    QPointF finalTarget; // 选择这一步需要跳到的位置，但可能需要调整起跳点
+    if (distance(leftTarget, start) < distance(rightTarget, start)){
+        finalTarget = leftTarget;
+    }
+    else{
+        finalTarget = rightTarget;
+    }
+    return finalTarget;
+}
+
+QPointF Map::prepareJump(QPointF start, int nextPlatform){
+    QPointF leftTarget = QPointF(collisionBox[nextPlatform].x() + 80, collisionBox[nextPlatform].y() - 60);
+    QPointF rightTarget = QPointF(collisionBox[nextPlatform].x() + collisionBox[nextPlatform].width() - 80, collisionBox[nextPlatform].y() - 60);
+    QPointF finalTarget; // 选择这一步需要跳到的位置，但可能需要调整起跳点
+    if (distance(leftTarget, start) < distance(rightTarget, start)){
+        finalTarget = QPointF(collisionBox[nextPlatform].x() - 80, start.y());
+    }
+    else{
+        finalTarget = QPointF(rightTarget.x() + 160, start.y());
+    }
+    return finalTarget;
+}
+
+QPointF Map::prepareFall(QPointF start, int currentPlatform, int nextPlatform){
+    QPointF leftTarget = QPointF(collisionBox[currentPlatform].x() - 80, collisionBox[nextPlatform].y() - 60);
+    QPointF rightTarget = QPointF(collisionBox[currentPlatform].x() + collisionBox[currentPlatform].width() + 80, collisionBox[nextPlatform].y() - 60);
+    //QPointF finalTarget; // 选择这一步需要跳到的位置，但可能需要调整起跳点
+    if (leftTarget.x() > 30){
+        return leftTarget;
+    }
+    return rightTarget;
+}
+
+float Map::distance(const QPointF& a, const QPointF& b) const
+{
+    return std::sqrt(std::pow(a.x() - b.x(), 2) + std::pow(a.y() - b.y(), 2));
+}
+
+int Map::checkPlatform(QPointF target){
+    for(int i=0;i<8;i++){
+        if(collisionBox[i].y() + 20 > target.y() + 60 && collisionBox[i].y() < target.y() + 60 && target.x() > collisionBox[i].x() - 20 && target.x() < collisionBox[i].x() + collisionBox[i].width() + 20){
+            return i; // 注意player有60的高度，坐标取正中央上边
+        }
+    }
+    return -1;
+}
+
+int Map::getNextPlatform(int start, int target) {
+    const auto& graph = accessPlatforms;
+    int n = graph.size();
+    std::vector<bool> visited(n, false);
+    std::vector<int> parent(n, -1); // 记录路径
+    std::queue<int> q;
+
+    q.push(start);
+    visited[start] = true;
+
+    while (!q.empty()) {
+        int curr = q.front();
+        q.pop();
+
+        if (curr == target) break;
+
+        for (int neighbor : graph[curr]) {
+            if (!visited[neighbor]) {
+                visited[neighbor] = true;
+                parent[neighbor] = curr;
+                q.push(neighbor);
+            }
+        }
+    }
+
+    if (!visited[target]) {
+        return -1; // 无法到达
+    }
+
+    // 回溯，找到从目标往前的路径
+    int curr = target;
+    int prev = parent[target];
+
+    while (prev != -1 && parent[prev] != -1) {
+        curr = prev;
+        prev = parent[prev];
+    }
+
+    return curr; // 起点后第一步
 }
