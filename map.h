@@ -20,9 +20,9 @@ public:
     // 假设提供一个方法来检查碰撞
     CollisionResult checkCollision(const QRect& playerRect, const float playerVx, const float playerVy);
 
-    int findPath(QPointF start, QPointF target);
+    int findPath(QPointF start, QPointF target, bool type=true);
 
-    int checkPlatform(QPointF target);
+    int checkPlatform(QPointF target, bool type=true);
     int getNextPlatform(int start, int target);
     float distance(const QPointF& a, const QPointF& b) const;
     QPointF findTarget(QPointF start, int nextPlatform);

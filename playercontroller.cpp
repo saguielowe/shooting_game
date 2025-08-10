@@ -58,7 +58,7 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         player.lock()->state.shootState = true; // 当按下攻击键且不处于冷却，判定可以攻击，打不打到无所谓
         triggerAttackCooldown();
         if (player.lock()->weapon == Player::WeaponType::ball){
-            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball);
+            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, player.lock()->id);
             player.lock()->ballCount --;
             if (player.lock()->ballCount == 0){
                 player.lock()->weapon = Player::WeaponType::punch;
@@ -66,11 +66,11 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         }
         else if (player.lock()->weapon == Player::WeaponType::rifle || player.lock()->weapon == Player::WeaponType::sniper){
             if (player.lock()->vx != 0){ // 此处步枪和狙击枪统一命令
-                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, player.lock()->id);
             }
             else{
                 float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
-                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, player.lock()->id);
             }
             if (player.lock()->weapon == Player::WeaponType::rifle) SoundManager::instance().play("rifle", 0.4);
             if (player.lock()->weapon == Player::WeaponType::sniper) SoundManager::instance().play("sniper", 0.6);

@@ -31,6 +31,7 @@ public:
     void updateDrops(float dt);
     void updateBalls(float dt);
     void drawDrops(QPainter& painter);
+    QVector<QPair<QPointF, QString>> getAvailableDrops() const;
     ~Widget();
 
 protected:
@@ -40,11 +41,12 @@ protected:
 
 private slots:
     void gameLoop();
-    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon);
+    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id);
 signals:
     void keyPressed();
 private:
     void spawnDrop();
+    void updateAIInfo();
     void gameEnd(int id);
 
     struct inputIntent {

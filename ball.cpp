@@ -4,7 +4,8 @@
 #include "soundmanager.h"
 #include <QPixmap>
 #include <QDebug>
-Ball::Ball(QPointF pos, QPointF v) : Entity(pos) {
+Ball::Ball(QPointF pos, QPointF v, int id) : Entity(pos, id) {
+    qDebug() <<"【ball】："<<id;
     velocity = v;
     lifetime = 0;
     QString path = ":/items/assets/items/ball.png";
@@ -56,8 +57,9 @@ void Ball::onCollideWithPlayer(){
     basicDamage /= 1.5; // 多次撞击伤害减小
 }
 
-float Ball::getDamage(){
-    if (lifetime <= 0.2){
+float Ball::getDamage(int id){
+    qDebug()<<"受伤者: "<<id;
+    if (parentId == id){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
     //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());

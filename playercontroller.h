@@ -20,10 +20,11 @@ public:
     QRect getHitbox();
     bool canAttack() const { return player.lock()->state.shootState; }
     void triggerAttackCooldown(float time=1) { cooldowns["attack"] = time; }
+    int getId() { return player.lock()->id; }
     Player::WeaponType getWeaponType();
 
 signals:
-    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon); // 🟩 投掷请求（不需要传目标）
+    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon, int id); // 🟩 投掷请求（不需要传目标）
 private:
     std::weak_ptr<Player> player;
     QMap <QString, float> cooldowns;

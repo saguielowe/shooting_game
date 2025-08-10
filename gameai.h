@@ -26,7 +26,8 @@ enum class AIState {
     SEEK_WEAPON,      // 预留：寻找武器
     SEEK_ARMOR,       // 预留：寻找护甲
     DODGE,            // 预留：闪避子弹
-    RETREAT           // 预留：战术撤退
+    RETREAT,          // 预留：战术撤退
+    SEEK_SUPPLY       // 预留：寻找补给
 };
 // 为QDebug添加MoveIntent支持
 inline QDebug operator<<(QDebug debug, const MoveIntent& intent)
@@ -107,6 +108,7 @@ private:
     void executeSeekArmor(MoveIntent& moveIntent, AttackIntent& attackIntent);
     void executeDodge(MoveIntent& moveIntent, AttackIntent& attackIntent);
     void executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeSeekSupply(MoveIntent& moveIntent, AttackIntent& attackIntent);
     void executeJump(MoveIntent& moveIntent, QPointF target, QPointF start);
 
     // 预留的分析函数
@@ -115,13 +117,38 @@ private:
     bool shouldSeekArmor();
     bool shouldDodge();
     bool shouldRetreat();
+    bool shouldSeekSupply();
     QPointF findBestWeapon();
     QPointF findBestArmor();
+    QPointF findBestSupply();
     bool hasLineOfSight(const QPointF& from, const QPointF& to);
 
     // 工具函数
     float distance(const QPointF& a, const QPointF& b) const;
     float horizontalDistance(const QPointF& a, const QPointF& b) const;
+private:
+    int getWeaponPriority(const QString& weaponType) const;
+
+public:
+    struct DropInfo {
+        QPointF position;
+        QString itemType;
+    };
+
+private:
+    QVector<DropInfo> m_availableDrops; // 缓存掉落物信息
+    QString m_currentWeapon; // 当前武器类型
+    void executeMoveTo(QPointF target, MoveIntent& moveIntent, float stopDistance = 10.0f);
+    QString getoutput(AIState state);
+public:
+    void updateDropsInfo(const QVector<DropInfo>& drops) { m_availableDrops = drops; }
+    void setCurrentWeapon(const QString& weapon) { m_currentWeapon = weapon; }
+    // 在gameai.h中添加：
+private:
+    bool isRangedWeapon(const QString& weaponType) const;
+    void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    float getRangedAttackDistance(const QString& weaponType) const;
+
 
 private:
     // 玩家引用
@@ -157,6 +184,10 @@ private:
     std::random_device m_rd;
     std::mt19937 m_gen;
     std::uniform_real_distribution<> m_dis;
+    // 在private部分添加：
+    MoveIntent m_lastAttackMove;     // 上次攻击时的移动方向
+    int m_attackMoveTimer;           // 攻击走位计时器
+    float getAttackRange(std::shared_ptr<Player> player); // 获取攻击范围
 };
 
 #endif // GAMEAI_H

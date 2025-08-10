@@ -149,9 +149,9 @@ CollisionResult Map::checkCollision(const QRect& playerHitbox, const float playe
     return result;
 }
 
-int Map::findPath(QPointF start, QPointF target){
-    int currentPlatform = checkPlatform(start);
-    int targetPlatform = checkPlatform(target);
+int Map::findPath(QPointF start, QPointF target, bool type){ // type=true表示玩家，偏移60；否则偏移40
+    int currentPlatform = checkPlatform(start, type);
+    int targetPlatform = checkPlatform(target, type);
     if (currentPlatform == targetPlatform && currentPlatform != -1){ // 如果在同一平台，那么直接过去
         return targetPlatform;
     }
@@ -180,10 +180,10 @@ QPointF Map::prepareJump(QPointF start, int nextPlatform){
     QPointF rightTarget = QPointF(collisionBox[nextPlatform].x() + collisionBox[nextPlatform].width() - 80, collisionBox[nextPlatform].y() - 60);
     QPointF finalTarget; // 选择这一步需要跳到的位置，但可能需要调整起跳点
     if (distance(leftTarget, start) < distance(rightTarget, start)){
-        finalTarget = QPointF(collisionBox[nextPlatform].x() - 80, start.y());
+        finalTarget = QPointF(collisionBox[nextPlatform].x() - 140, start.y());
     }
     else{
-        finalTarget = QPointF(rightTarget.x() + 160, start.y());
+        finalTarget = QPointF(rightTarget.x() + 220, start.y());
     }
     return finalTarget;
 }
@@ -203,10 +203,18 @@ float Map::distance(const QPointF& a, const QPointF& b) const
     return std::sqrt(std::pow(a.x() - b.x(), 2) + std::pow(a.y() - b.y(), 2));
 }
 
-int Map::checkPlatform(QPointF target){
+int Map::checkPlatform(QPointF target, bool type){
+    if (type){
+        for(int i=0;i<8;i++){
+            if(collisionBox[i].y() + 20 > target.y() + 60 && collisionBox[i].y() < target.y() + 60 && target.x() > collisionBox[i].x() - 30 && target.x() < collisionBox[i].x() + collisionBox[i].width() + 30){
+                return i; // 注意player有60的高度，坐标取正中央上边
+            }
+        }
+        return -1;
+    }
     for(int i=0;i<8;i++){
-        if(collisionBox[i].y() + 20 > target.y() + 60 && collisionBox[i].y() < target.y() + 60 && target.x() > collisionBox[i].x() - 20 && target.x() < collisionBox[i].x() + collisionBox[i].width() + 20){
-            return i; // 注意player有60的高度，坐标取正中央上边
+        if(collisionBox[i].y() + 30 > target.y() + 40 && collisionBox[i].y() - 30 < target.y() + 40 && target.x() > collisionBox[i].x() - 30 && target.x() < collisionBox[i].x() + collisionBox[i].width() + 30){
+            return i; // 注意drop有40的高度，坐标取正中央上边
         }
     }
     return -1;

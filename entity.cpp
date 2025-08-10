@@ -1,6 +1,9 @@
 #include "entity.h"
+#include <QDebug>
 
-Entity::Entity(QPointF pos, int layer): position(pos), layer(layer) {}
+Entity::Entity(QPointF pos, int id): position(pos), parentId(id){
+    qDebug() << "【entity】："<<id;
+}
 
 void Entity::setDt(float t){
     dt = t;

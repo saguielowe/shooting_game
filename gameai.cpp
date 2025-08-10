@@ -39,8 +39,6 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
     case AIState::FOLLOW:
         executeFollow(moveIntent, attackIntent);
         break;
-
-    // === 预留的状态处理 ===
     case AIState::ATTACK:
         executeAttack(moveIntent, attackIntent);
         break;
@@ -55,6 +53,9 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
         break;
     case AIState::RETREAT:
         executeRetreat(moveIntent, attackIntent);
+        break;
+    case AIState::SEEK_SUPPLY:
+        executeSeekSupply(moveIntent, attackIntent);
         break;
 
     default:
@@ -128,8 +129,6 @@ void GameAI::executeFollow(MoveIntent& moveIntent, AttackIntent& attackIntent)
         }
     }
 
-    // 预留攻击逻辑接口
-    // attackIntent = shouldAttackWhileFollowing();
 }
 
 
@@ -142,6 +141,38 @@ bool GameAI::shouldMoveToTarget()
     return dist > m_followDistance;
 }
 
+void GameAI::executeMoveTo(QPointF target, MoveIntent& moveIntent, float stopDistance)
+{
+    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+    my_platform = Map::getInstance().checkPlatform(aiPos);
+
+    // 检查是否已经足够接近目标
+    float dist = distance(aiPos, target);
+    if (dist <= stopDistance) {
+        moveIntent = MoveIntent::NONE;
+        return;
+    }
+
+    // 计算要移动到的平台
+    next_platform = Map::getInstance().findPath(aiPos, target, false); // 移动到掉落物位置
+
+    if (next_platform == -1 && my_platform != -1){
+        return; // 目标在空中，我不在空中，不需要移动
+    }
+
+    if (my_platform == -1){ // 我在空中
+        moveIntent = calculateMoveDirection(next_target, false);
+    }
+    else{ // 我不在空中
+        if (my_platform == next_platform){ // 不需要换平台
+            moveIntent = calculateMoveDirection(target);
+        }
+        else{ // 需要换平台
+            next_target = Map::getInstance().findTarget(aiPos, next_platform);
+            moveIntent = calculateMoveDirection(next_target);
+        }
+    }
+}
 MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
 {
     QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
@@ -149,10 +180,18 @@ MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
 
     float dx = targetPos.x() - aiPos.x();
     if (targetPos.y() < aiPos.y() - 20 && y){ // 如果目标在上层
+        if (next_platform == -1) return MoveIntent::NONE;
         QPointF revised_target = Map::getInstance().prepareJump(aiPos, next_platform);
         drawPos = revised_target;
         dx = revised_target.x() - aiPos.x();
         if (abs(dx) < 40.0f){
+            //确定一下跳跃方向再起跳
+            if ((targetPos.x() < aiPos.x()) && (m_aiPlayer.lock()->direction == 1)){ // 目标左，方向右
+                return MoveIntent::MOVING_LEFT; // 二楼目标在左，往左起跳
+            }
+            else if ((targetPos.x() > aiPos.x()) && (m_aiPlayer.lock()->direction == 0)){
+                return MoveIntent::MOVING_RIGHT;
+            }
             return MoveIntent::JUMP;
         }
         return (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
@@ -175,48 +214,38 @@ MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
     return (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
 }
 
-bool GameAI::shouldJump(QPointF target)
-{
-    if (!isPlayerOnGround(m_aiPlayer.lock())) {
-        return false; // 已经在空中
-    }
-
-    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
-
-    // 目标在上方且高度差足够
-    if (target.y() < aiPos.y() - m_jumpThreshold) {
-        return true;
-    }
-
-    // 检查前方是否有障碍需要跳过
-    if (isPathBlocked()) {
-        return true;
-    }
-
-    return false;
-}
-
 void GameAI::draw(QPainter& painter){
     painter.setBrush(Qt::red);
     painter.drawRect(drawPos.x(), drawPos.y(), 40, 60);
     painter.drawText(10, 10, "my_platform:" + QString::number(my_platform));
     painter.drawText(10, 20, "next_platform:" + QString::number(next_platform));
-}
-
-bool GameAI::isPathBlocked()
-{
-    // 这里需要根据你的碰撞检测系统实现
-    // 暂时返回false，表示路径畅通
-    //
-    // 实际实现可能是：
-    // QPointF aiPos = getPlayerPosition(m_aiPlayer);
-    // QPointF targetPos = getPlayerPosition(m_targetPlayer);
-    // return physicsWorld->linecast(aiPos, targetPos, PLATFORM_LAYER);
-
-    return false;
+    painter.drawText(10, 30, "AI state:" + getoutput(m_currentState));
 }
 
 // === 工具函数实现 ===
+QString GameAI::getoutput(AIState state){
+    if (state == AIState::ATTACK){
+        return "ATTACK";
+    }
+    else if (state == AIState::FOLLOW){
+        return "FOLLOW";
+    }
+    else if (state == AIState::RETREAT){
+        return "RETREAT";
+    }
+    else if (state == AIState::SEEK_WEAPON){
+        return "SEEK_WEAPON";
+    }
+    else if (state == AIState::SEEK_SUPPLY){
+        return "SEEK_SUPPLY";
+    }
+    else if (state == AIState::SEEK_ARMOR){
+        return "SEEK_ARMOR";
+    }
+    else{
+        return "NONE";
+    }
+}
 
 QPointF GameAI::getPlayerPosition(std::shared_ptr<Player> player)
 {
@@ -242,64 +271,457 @@ float GameAI::horizontalDistance(const QPointF& a, const QPointF& b) const
 
 AIState GameAI::determineNextState()
 {
-    // 目前只返回FOLLOW状态
-    // 后续可以根据游戏状态决定状态转换
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return AIState::FOLLOW;
 
-    /*
-    // 预留的状态转换逻辑：
-    if (calculateThreat() > 0.8) {
-        return AIState::RETREAT;
-    }
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+    float dist = distance(aiPos, targetPos);
+    float healthRatio = (float)aiPlayer->hp / 100; // 100不准确！
 
-    if (shouldDodge()) {
-        return AIState::DODGE;
-    }
-
-    if (shouldSeekWeapon()) {
-        return AIState::SEEK_WEAPON;
-    }
-
-    if (shouldSeekArmor()) {
-        return AIState::SEEK_ARMOR;
-    }
-
-    if (hasLineOfSight(getPlayerPosition(m_aiPlayer), getPlayerPosition(m_targetPlayer))) {
+    // 血量充足时的激进策略
+    if (healthRatio > 0.6f) { // 优先拾取武器
+        if (shouldSeekWeapon()){
+            return AIState::SEEK_WEAPON;
+        }
+        if (shouldSeekArmor()) {
+            return AIState::SEEK_ARMOR;
+        }
+        if (targetPlayer->armor == Player::ArmorType::chainmail && aiPlayer->weapon == Player::WeaponType::punch){
+            // 无法对敌人造成伤害则放弃进攻
+            return AIState::FOLLOW;
+        }
         return AIState::ATTACK;
     }
-    */
 
-    return AIState::FOLLOW;
+    // 血量中等时的谨慎策略
+    else if (healthRatio > 0.3f) { // 优先找护甲
+        if (shouldSeekArmor()) {
+            return AIState::SEEK_ARMOR;
+        }
+        if (shouldSeekWeapon()){
+            return AIState::SEEK_WEAPON;
+        }
+        if (shouldSeekSupply()){ // 优先找补给
+            return AIState::SEEK_SUPPLY;
+        }
+        if (targetPlayer->armor == Player::ArmorType::chainmail && aiPlayer->weapon == Player::WeaponType::punch){
+            // 无法对敌人造成伤害则放弃进攻
+            return AIState::RETREAT;
+        }
+        return AIState::ATTACK;
+    }
+
+    // 血量危险时的保守策略
+    else {
+        if (shouldSeekSupply()){ // 优先找补给
+            return AIState::SEEK_SUPPLY;
+        }
+        if (targetPlayer->armor == Player::ArmorType::chainmail && aiPlayer->weapon == Player::WeaponType::punch){
+            // 无法对敌人造成伤害则放弃进攻
+            return AIState::RETREAT;
+        }
+        return AIState::ATTACK;
+    }
 }
 
-// 预留函数的空实现
-void GameAI::executeAttack(MoveIntent& moveIntent, AttackIntent& attackIntent) {
-    // 预留：攻击逻辑
-    executeFollow(moveIntent, attackIntent); // 暂时fallback到跟随
-    attackIntent = true; // 攻击状态下开火
-}
+void GameAI::executeSeekWeapon(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    QPointF weaponPos = findBestWeapon();
+    if (weaponPos == QPointF()) {
+        executeFollow(moveIntent, attackIntent);
+        return;
+    }
 
-void GameAI::executeSeekWeapon(MoveIntent& moveIntent, AttackIntent& attackIntent) {
-    // 预留：寻找武器逻辑
+    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+    float distToWeaponX = abs(aiPos.x() - weaponPos.x());
+    float distToWeapon = distance(aiPos, weaponPos);
+
+    // 如果很接近武器，就蹲下拾取
+    if (distToWeaponX < 20.0f && distToWeapon < 100.0f) {
+        moveIntent = MoveIntent::CROUCH;
+        attackIntent = false;
+        return;
+    }
+
+    // 使用通用寻路函数前往武器位置
+    executeMoveTo(weaponPos, moveIntent, 20.0f);
+    attackIntent = false;
 }
 
 void GameAI::executeSeekArmor(MoveIntent& moveIntent, AttackIntent& attackIntent) {
-    // 预留：寻找护甲逻辑
+    QPointF armorPos = findBestArmor();
+    if (armorPos == QPointF()) {
+        executeFollow(moveIntent, attackIntent);
+        return;
+    }
+
+    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+    float distToWeaponX = abs(aiPos.x() - armorPos.x());
+    float distToWeapon = distance(aiPos, armorPos);
+
+    // 如果很接近武器，就蹲下拾取
+    if (distToWeaponX < 20.0f && distToWeapon < 100.0f) {
+        moveIntent = MoveIntent::CROUCH;
+        attackIntent = false;
+        return;
+    }
+
+    // 使用通用寻路函数前往武器位置
+    executeMoveTo(armorPos, moveIntent, 20.0f);
+    attackIntent = false;
 }
 
 void GameAI::executeDodge(MoveIntent& moveIntent, AttackIntent& attackIntent) {
     // 预留：闪避逻辑
 }
 
-void GameAI::executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent) {
-    // 预留：撤退逻辑
+void GameAI::executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return;
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+    float currentDist = distance(aiPos, targetPos);
+
+    // 如果已经足够远了，就停下
+    if (currentDist > 180.0f) {
+        moveIntent = MoveIntent::NONE;
+        attackIntent = false;
+        return;
+    }
+
+    // 距离太近，慌乱地随机移动：左30%，右30%，跳40%
+    double randomValue = m_dis(m_gen);
+
+    if (randomValue < 0.3) {
+        moveIntent = MoveIntent::MOVING_LEFT;
+    }
+    else if (randomValue < 0.6) {
+        moveIntent = MoveIntent::MOVING_RIGHT;
+    }
+    else {
+        moveIntent = MoveIntent::JUMP;
+    }
+
+    attackIntent = false;
 }
 
 // 预留分析函数
 double GameAI::calculateThreat() { return 0.0; }
-bool GameAI::shouldSeekWeapon() { return false; }
-bool GameAI::shouldSeekArmor() { return false; }
+bool GameAI::shouldSeekWeapon()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return false;
+
+    // 血量很低时优先保命
+    float healthRatio = (float)aiPlayer->hp / 100;
+    if (healthRatio < 0.25f) return false;
+
+    // 获取当前武器优先级
+    int currentPriority = getWeaponPriority(m_currentWeapon.isEmpty() ? "punch" : m_currentWeapon);
+
+    // 检查是否有更好的武器，有则拾取（武器带来的优势很大）
+    for (const auto& drop : m_availableDrops) {
+        int dropPriority = getWeaponPriority(drop.itemType);
+        if (dropPriority > currentPriority) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+QPointF GameAI::findBestWeapon()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return QPointF();
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    int currentPriority = getWeaponPriority(m_currentWeapon.isEmpty() ? "punch" : m_currentWeapon);
+
+    QPointF bestWeaponPos;
+    int bestPriority = currentPriority;
+    float bestScore = -1.0f;
+
+    for (const auto& drop : m_availableDrops) {
+        int dropPriority = getWeaponPriority(drop.itemType);
+        float dropDistance = distance(aiPos, drop.position);
+
+        // 只考虑更好的武器
+        if (dropPriority > currentPriority && dropDistance < 500.0f) {
+            // 评分：优先级差异 - 距离惩罚
+            float score = (dropPriority - currentPriority);
+
+            if (score > bestScore) {
+                bestWeaponPos = drop.position;
+                bestScore = score;
+            }
+        }
+    }
+
+    return bestWeaponPos;
+}
+
+int GameAI::getWeaponPriority(const QString& weaponType) const
+{
+    if (weaponType == "sniper") return 5;
+    if (weaponType == "rifle") return 4;
+    if (weaponType == "ball") return 3;
+    if (weaponType == "knife") return 2;
+    if (weaponType == "punch") return 1;
+    return 0; // 未知武器
+}
+
+void GameAI::executeSeekSupply(MoveIntent& moveIntent, AttackIntent& attackIntent){
+    QPointF supplyPos = findBestSupply();
+    if (supplyPos == QPointF()) {
+        executeFollow(moveIntent, attackIntent);
+        return;
+    }
+
+    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+    float distToWeaponX = abs(aiPos.x() - supplyPos.x());
+    float distToWeapon = distance(aiPos, supplyPos);
+
+    // 如果很接近武器，就蹲下拾取
+    if (distToWeaponX < 20.0f && distToWeapon < 100.0f) {
+        moveIntent = MoveIntent::CROUCH;
+        attackIntent = false;
+        return;
+    }
+
+    executeMoveTo(supplyPos, moveIntent, 20.0f);
+    attackIntent = false;
+
+}
+
+void GameAI::executeAttack(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return;
+
+    // 检查是否是远程武器
+    if (isRangedWeapon(m_currentWeapon)) {
+        executeRangedAttack(moveIntent, attackIntent);
+        return;
+    }
+
+    // 原有的近战逻辑保持不变...
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+    float horizontalDist = horizontalDistance(aiPos, targetPos);
+    float dist = distance(aiPos, targetPos);
+
+    float attackRange = 40.0f;
+    float attackRangeWithError = attackRange + (m_dis(m_gen) - 0.5) * 40.0f;
+
+    if (horizontalDist <= attackRangeWithError && dist <= attackRangeWithError) { // 使得ai有可能在错误的距离发动攻击，降低命中率
+        attackIntent = true;
+
+        if (m_attackMoveTimer <= 0) {
+            if (aiPos.x() < targetPos.x()) {
+                m_lastAttackMove = (m_dis(m_gen) > 0.3) ? MoveIntent::MOVING_LEFT : MoveIntent::MOVING_RIGHT;
+            } else {
+                m_lastAttackMove = (m_dis(m_gen) > 0.3) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+            }
+            m_attackMoveTimer = 20 + (int)(m_dis(m_gen) * 30);
+        }
+
+        if (m_dis(m_gen) > 0.3) {
+            moveIntent = m_lastAttackMove;
+        }
+        m_attackMoveTimer--;
+    }
+    else {
+        attackIntent = false;
+        executeMoveTo(targetPos, moveIntent, 35.0f);
+    }
+}
+
+bool GameAI::isRangedWeapon(const QString& weaponType) const
+{
+    return (weaponType == "ball" || weaponType == "rifle" || weaponType == "sniper");
+}
+
+void GameAI::executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return;
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+    float dist = distance(aiPos, targetPos);
+    float maxRange = getRangedAttackDistance(m_currentWeapon);
+
+    // 距离太近，需要拉开距离
+    if (dist < 200.0f) {
+        // 简单后退：往反方向移动
+        float dx = aiPos.x() - targetPos.x();
+        if (abs(dx) > 10.0f) {
+            moveIntent = (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+        }
+        attackIntent = false;
+        return;
+    }
+
+    // 在合适的攻击距离内
+    if (m_currentWeapon == "ball") {
+        // 实心球：简单预判，不追求精确
+        // 只要大概比对手高就开火
+        if (targetPos.y() >= aiPos.y() - 20) {
+            if (abs(aiPlayer->vx) > 10){ // 跑起来再开火
+                attackIntent = true;
+            }
+            else{
+                float dx = aiPos.x() - targetPos.x();
+                moveIntent = (dx < 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+            }
+        }
+        else{
+            executeFollow(moveIntent, attackIntent); // 至少得和对手一样高
+            return;
+        }
+    }
+    else { // rifle或sniper
+        // 枪械：精确瞄准
+        if (abs(targetPos.y() - aiPos.y()) <= 60.0f) {
+            if ((aiPlayer->direction) == (targetPos.x() - aiPos.x() > 0)){ // 确保射击方向正确
+                attackIntent = true;
+            }
+            else{
+                float dx = aiPos.x() - targetPos.x();
+                moveIntent = (dx < 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+            }
+        }
+        else{
+            executeFollow(moveIntent, attackIntent); // 至少得和对手一样高
+            return;
+        }
+    }
+}
+
+float GameAI::getRangedAttackDistance(const QString& weaponType) const
+{
+    if (weaponType == "sniper") return 400.0f;
+    if (weaponType == "rifle") return 300.0f;
+    if (weaponType == "ball") return 250.0f;
+    return 100.0f;
+}
+bool GameAI::shouldSeekArmor() {
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return false;
+
+    // 血量很低时优先保命
+    float healthRatio = (float)aiPlayer->hp / 100;
+    if (healthRatio < 0.15f) return false;
+
+    Player::WeaponType opponentWeapon = m_targetPlayer.lock()->weapon;
+    int desiredArmor = 0;
+    if (opponentWeapon == Player::WeaponType::punch || opponentWeapon == Player::WeaponType::knife){
+        desiredArmor = 1;
+    }
+    else if (opponentWeapon == Player::WeaponType::sniper || opponentWeapon == Player::WeaponType::rifle){
+        desiredArmor = 2;
+    }
+
+    if (!desiredArmor) return false; // 对手的武器无法用护甲防御，放弃
+
+    for (const auto& drop : m_availableDrops) {
+        if (drop.itemType == "chainmail" && desiredArmor == 1){
+            return true;
+        }
+        else if (drop.itemType == "vest" && desiredArmor == 2){
+            return true;
+        }
+    }
+
+    return false; // 没有想要的护甲，放弃
+}
 bool GameAI::shouldDodge() { return false; }
-bool GameAI::shouldRetreat() { return false; }
-QPointF GameAI::findBestWeapon() { return QPointF(); }
-QPointF GameAI::findBestArmor() { return QPointF(); }
-bool GameAI::hasLineOfSight(const QPointF& from, const QPointF& to) { return true; }
+bool GameAI::shouldSeekSupply() {
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return false;
+
+    // 血量很低时优先保命
+    float healthRatio = (float)aiPlayer->hp / 100;
+    if (healthRatio > 0.5f) return false;
+    if (m_targetPlayer.lock()->hp < 20){
+        return false; // 对手也快没血了，激进策略
+    }
+
+    for (const auto& drop : m_availableDrops) {
+        if (drop.itemType == "bandage" || drop.itemType == "medkit" || drop.itemType == "adrenaline"){
+            return true;
+        }
+    }
+
+   return false; // 没有补给掉落
+
+}
+QPointF GameAI::findBestArmor() {
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return QPointF();
+    Player::WeaponType opponentWeapon = m_targetPlayer.lock()->weapon;
+    int desiredArmor = 0;
+    if (opponentWeapon == Player::WeaponType::punch || opponentWeapon == Player::WeaponType::knife){
+        desiredArmor = 1;
+    }
+    else if (opponentWeapon == Player::WeaponType::sniper || opponentWeapon == Player::WeaponType::rifle){
+        desiredArmor = 2;
+    }
+
+    if (!desiredArmor) return QPointF(); // 对手的武器无法用护甲防御，放弃
+
+    for (const auto& drop : m_availableDrops) {
+        if (drop.itemType == "chainmail" && desiredArmor == 1){
+            return drop.position;
+        }
+        else if (drop.itemType == "vest" && desiredArmor == 2){
+            return drop.position;
+        }
+    }
+
+    return QPointF(); // 没有想要的护甲，放弃
+}
+QPointF GameAI::findBestSupply() {
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return QPointF();
+
+    float healthRatio = (float)aiPlayer->hp / 100; // 100不准确！
+
+    if (healthRatio > 0.6){
+        return QPointF(); // 血量很充足，先作战
+    }
+
+    int bestType = 0;
+    QPointF bestPos = QPointF();
+
+    for (const auto& drop : m_availableDrops) {
+        if (drop.itemType == "bandage"){
+            if (1 > bestType){
+                bestType = 1;
+                bestPos = drop.position;
+            }
+        }
+        else if (drop.itemType == "medkit"){
+            if (2 > bestType){
+                bestType = 2;
+                bestPos = drop.position;
+            }
+        }
+        else if (drop.itemType == "adrenaline" && healthRatio > 0.3){
+            if (3 > bestType){
+                bestType = 3;
+                bestPos = drop.position;
+            }
+        }
+    }
+
+    return bestPos; // 没有想要的护甲，放弃
+}

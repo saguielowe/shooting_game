@@ -178,7 +178,7 @@ void Widget::gameLoop() {
 
     intent[1].moveIntent = moveIntent;
     intent[1].attackIntent = attackIntent;
-    qDebug() << moveIntent << attackIntent;
+    //qDebug() << moveIntent << attackIntent;
     controllers[0]->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
     controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
     cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
@@ -260,6 +260,7 @@ void Widget::updateDrops(float dt){
         drop.lock()->setDt(dt);
         drop.lock()->update();
     }
+    updateAIInfo();
 }
 
 void Widget::updateBalls(float dt){
@@ -330,7 +331,8 @@ void Widget::gameEnd(int id)
     });
 }
 
-void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon) {
+void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id) {
+    qDebug() <<"【onplayer】发射者： "<<id;
     if (weapon == Player::WeaponType::ball){
         if (vx > 0){
             vx += 500;
@@ -344,7 +346,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else{
             vy -= 500;
         }*/
-        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy));
+        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy), id);
         entities.push_back(ball);
         balls.push_back(ball);
     }
@@ -355,7 +357,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -2000;
         }
-        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1);
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1, id);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }
@@ -366,8 +368,46 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -3000;
         }
-        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2);
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2, id);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }
+}
+
+void Widget::updateAIInfo()
+{
+    if (!ai) return;
+
+    // 收集掉落物信息
+    QVector<GameAI::DropInfo> dropInfos;
+    for (const auto& weakDrop : drops) {
+        if (auto drop = weakDrop.lock()) {
+            GameAI::DropInfo info;
+            info.position = drop->getPos();
+            info.itemType = drop->itemType;
+            dropInfos.append(info);
+        }
+    }
+
+    // 更新AI的掉落物信息
+    ai->updateDropsInfo(dropInfos);
+
+    // 更新AI玩家的当前武器（假设player2是AI）
+    auto wp = players[1]->weapon;
+    if (wp == Player::WeaponType::punch){
+        ai->setCurrentWeapon("punch");
+    }
+    else if (wp == Player::WeaponType::knife){
+        ai->setCurrentWeapon("knife");
+    }
+    else if (wp == Player::WeaponType::ball){
+        ai->setCurrentWeapon("ball");
+    }
+    else if (wp == Player::WeaponType::rifle){
+        ai->setCurrentWeapon("rifle");
+    }
+    else if (wp == Player::WeaponType::sniper){
+        ai->setCurrentWeapon("sniper");
+    }
+
 }

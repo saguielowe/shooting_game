@@ -4,11 +4,11 @@
 class Bullet : public Entity
 {
 public:
-    Bullet(QPointF pos, float vx, int type); // type=1：rifle，type=2：sniper
+    Bullet(QPointF pos, float vx, int type, int id); // type=1：rifle，type=2：sniper
     void update() override;
     void draw(QPainter &painter) override;
     void onCollideWithPlayer() override;
-    float getDamage() override;
+    float getDamage(int id) override;
     QRect hitbox() override;
     bool shouldBeRemoved() override;
 

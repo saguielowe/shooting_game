@@ -3,7 +3,7 @@
 #include "map.h"
 #include <QDebug>
 
-Bullet::Bullet(QPointF pos, float vx, int type) : Entity(pos), type(type) {
+Bullet::Bullet(QPointF pos, float vx, int type, int id) : Entity(pos, id), type(type) {
     velocity = QPointF(vx, 0);
     QString path = ":/items/assets/items/bullet.png";
     pixmap = QPixmap(path).scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -30,8 +30,9 @@ void Bullet::onCollideWithPlayer(){
     toBeRemoved = true;
 }
 
-float Bullet::getDamage(){
-    if (lifetime <= 0.08) return 0;
+float Bullet::getDamage(int id){
+    qDebug() << "受伤者： "<<id<<"储存的发射者： "<<parentId;
+    if (parentId == id) return 0;
     if (type == 1){
         return 30;
     }
