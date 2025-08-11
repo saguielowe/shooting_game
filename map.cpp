@@ -18,10 +18,10 @@ QPixmap Map::loadScene(const QString& sceneName) {
     // 根据场景名称加载不同的碰撞箱数据
     if (sceneName == "ice") {
         collisionBox << QRect(372, 668, 253, 178) << QRect(238, 248, 534, 44)
-                     << QRect(592, 475, 490, 48) << QRect(0, 846, 1024, 56)
+                     << QRect(592, 475, 490, 48) << QRect(0, 846, 372, 56)
                      << QRect(0, 474, 425, 48) << QRect(0, 0, 20, 956)
-                     << QRect(1004, 0, 20, 956);
-        accessPlatforms.resize(5); // 5个平台编号为 0~4
+                     << QRect(1004, 0, 20, 956) << QRect(635, 846, 389, 56);
+        accessPlatforms.resize(8); // 5个平台编号为 0~4
         accessPlatforms[0].push_back(2);
         accessPlatforms[0].push_back(3);
         accessPlatforms[0].push_back(4);
@@ -37,6 +37,7 @@ QPixmap Map::loadScene(const QString& sceneName) {
         accessPlatforms[4].push_back(0);
         accessPlatforms[4].push_back(1);
 
+        accessPlatforms[7].push_back(0);
     }
     else if (sceneName == "default"){
         collisionBox << QRect(368, 705, 259, 192) << QRect(221, 267, 563, 44)
@@ -64,10 +65,10 @@ QPixmap Map::loadScene(const QString& sceneName) {
     }
     else if (sceneName == "grass"){
         collisionBox << QRect(365, 704, 264, 247) << QRect(221, 267, 560, 61)
-                     << QRect(590, 491, 409, 57) << QRect(20, 874, 982, 77)
+                     << QRect(590, 491, 409, 57) << QRect(20, 874, 345, 77)
                      << QRect(17, 491, 401, 57) << QRect(0, 0, 20, 956)
-                     << QRect(1004, 0, 20, 956);
-        accessPlatforms.resize(5); // 5个平台编号为 0~4
+                     << QRect(1004, 0, 20, 956) << QRect(632, 874, 350, 77);
+        accessPlatforms.resize(8); // 5个平台编号为 0~4
         accessPlatforms[0].push_back(2);
         accessPlatforms[0].push_back(3);
         accessPlatforms[0].push_back(4);
@@ -82,6 +83,8 @@ QPixmap Map::loadScene(const QString& sceneName) {
 
         accessPlatforms[4].push_back(0);
         accessPlatforms[4].push_back(1);
+
+        accessPlatforms[7].push_back(0);
     }
     return map;
 }
@@ -162,10 +165,10 @@ int Map::findPath(QPointF start, QPointF target, bool type){ // type=true表示�
     return -1;
 }
 
-QPointF Map::findTarget(QPointF start, int nextPlatform){
+QPointF Map::findTarget(QPointF start, int nextPlatform){ // 去找新平台的目标点
     QPointF leftTarget = QPointF(collisionBox[nextPlatform].x() + 80, collisionBox[nextPlatform].y() - 60);
     QPointF rightTarget = QPointF(collisionBox[nextPlatform].x() + collisionBox[nextPlatform].width() - 80, collisionBox[nextPlatform].y() - 60);
-    QPointF finalTarget; // 选择这一步需要跳到的位置，但可能需要调整起跳点
+    QPointF finalTarget;
     if (distance(leftTarget, start) < distance(rightTarget, start)){
         finalTarget = leftTarget;
     }

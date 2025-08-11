@@ -13,11 +13,77 @@ GameAI::GameAI(QObject *parent)
     , m_wasJumping(false)
     , m_jumpCooldown(0)
     , m_gen(m_rd())
+    , m_stuckCounter(0)
+    , m_lastDodgeTime(0)        // 新增初始化
     , m_dis(0.0, 1.0)
 {
     connect(m_aiTimer, &QTimer::timeout, this, &GameAI::processAI);
 }
+bool GameAI::isStuck()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return false;
 
+    QPointF currentPos = getPlayerPosition(aiPlayer);
+
+    // 计算位置变化
+    float positionChange = distance(currentPos, m_lastPosition);
+
+    if (positionChange < 5.0f) { // 位移很小
+        m_stuckCounter++;
+    } else {
+        m_stuckCounter = 0; // 重置计数器
+    }
+
+    m_lastPosition = currentPos;
+    return m_stuckCounter >= STUCK_THRESHOLD;
+}
+void GameAI::handleStuckSituation(MoveIntent& moveIntent)
+{
+    // 卡住了，执行救急动作
+    qDebug() << "AI stuck detected! Executing emergency moves.";
+
+    // 清除任何预定动作
+    m_plannedMoves.clear();
+    m_executingPlan = false;
+
+    // 执行随机救急动作序列
+    QVector<MoveIntent> emergencyMoves;
+
+    // 随机选择救急策略
+    double randomChoice = m_dis(m_gen);
+
+    if (randomChoice < 0.4) {
+        // 策略1：跳跃脱困
+        emergencyMoves.append(MoveIntent::JUMP);
+        emergencyMoves.append(MoveIntent::MOVING_LEFT);
+        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
+    } else if (randomChoice < 0.7) {
+        // 策略2：左右摆动
+        emergencyMoves.append(MoveIntent::MOVING_LEFT);
+        emergencyMoves.append(MoveIntent::MOVING_LEFT);
+        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
+        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
+    } else {
+        // 策略3：组合动作
+        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
+        emergencyMoves.append(MoveIntent::JUMP);
+        emergencyMoves.append(MoveIntent::MOVING_LEFT);
+    }
+
+    planMoveSequence(emergencyMoves);
+    moveIntent = emergencyMoves[0]; // 立即开始执行
+
+    m_stuckCounter = 0; // 重置卡住计数器
+}
+void GameAI::planMoveSequence(const QVector<MoveIntent>& moves)
+{
+    m_plannedMoves.clear();
+    for (const MoveIntent& move : moves) {
+        m_plannedMoves.enqueue(move);
+    }
+    m_executingPlan = !m_plannedMoves.isEmpty();
+}
 void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
 {
     // 重置意图
@@ -29,9 +95,19 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
         return;
     }
 
-    // 更新冷却计数
-    if (m_jumpCooldown > 0) {
-        m_jumpCooldown--;
+    // === 卡住检测和处理（最高优先级） ===
+    if (isStuck()) {
+        handleStuckSituation(moveIntent);
+        return;
+    }
+
+    // === 优先执行预定动作序列 ===
+    if (m_executingPlan && !m_plannedMoves.isEmpty()) {
+        moveIntent = m_plannedMoves.dequeue();
+        if (m_plannedMoves.isEmpty()) {
+            m_executingPlan = false; // 计划执行完毕
+        }
+        return; // 直接返回，不执行其他逻辑
     }
 
     // 状态机执行
@@ -186,11 +262,18 @@ MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
         dx = revised_target.x() - aiPos.x();
         if (abs(dx) < 40.0f){
             //确定一下跳跃方向再起跳
+            QVector<MoveIntent> jumpSequence;
             if ((targetPos.x() < aiPos.x()) && (m_aiPlayer.lock()->direction == 1)){ // 目标左，方向右
-                return MoveIntent::MOVING_LEFT; // 二楼目标在左，往左起跳
+                auto firstIntent = MoveIntent::MOVING_LEFT;
+                jumpSequence.append(firstIntent);
+                jumpSequence.append(MoveIntent::JUMP);
+                return firstIntent; // 二楼目标在左，往左起跳
             }
             else if ((targetPos.x() > aiPos.x()) && (m_aiPlayer.lock()->direction == 0)){
-                return MoveIntent::MOVING_RIGHT;
+                auto firstIntent = MoveIntent::MOVING_RIGHT;
+                jumpSequence.append(firstIntent);
+                jumpSequence.append(MoveIntent::JUMP);
+                return firstIntent;
             }
             return MoveIntent::JUMP;
         }
@@ -215,11 +298,11 @@ MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
 }
 
 void GameAI::draw(QPainter& painter){
-    painter.setBrush(Qt::red);
-    painter.drawRect(drawPos.x(), drawPos.y(), 40, 60);
-    painter.drawText(10, 10, "my_platform:" + QString::number(my_platform));
-    painter.drawText(10, 20, "next_platform:" + QString::number(next_platform));
-    painter.drawText(10, 30, "AI state:" + getoutput(m_currentState));
+    // painter.setBrush(Qt::red);
+    // painter.drawRect(drawPos.x(), drawPos.y(), 40, 60);
+    // painter.drawText(10, 10, "my_platform:" + QString::number(my_platform));
+    // painter.drawText(10, 20, "next_platform:" + QString::number(next_platform));
+    // painter.drawText(10, 30, "AI state:" + getoutput(m_currentState));
 }
 
 // === 工具函数实现 ===
@@ -278,7 +361,7 @@ AIState GameAI::determineNextState()
     QPointF aiPos = getPlayerPosition(aiPlayer);
     QPointF targetPos = getPlayerPosition(targetPlayer);
     float dist = distance(aiPos, targetPos);
-    float healthRatio = (float)aiPlayer->hp / 100; // 100不准确！
+    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
 
     // 血量充足时的激进策略
     if (healthRatio > 0.6f) { // 优先拾取武器
@@ -297,6 +380,9 @@ AIState GameAI::determineNextState()
 
     // 血量中等时的谨慎策略
     else if (healthRatio > 0.3f) { // 优先找护甲
+        if (shouldDodge()){
+            return AIState::DODGE;
+        }
         if (shouldSeekArmor()) {
             return AIState::SEEK_ARMOR;
         }
@@ -315,6 +401,9 @@ AIState GameAI::determineNextState()
 
     // 血量危险时的保守策略
     else {
+        if (shouldDodge()){
+            return AIState::DODGE;
+        }
         if (shouldSeekSupply()){ // 优先找补给
             return AIState::SEEK_SUPPLY;
         }
@@ -373,8 +462,91 @@ void GameAI::executeSeekArmor(MoveIntent& moveIntent, AttackIntent& attackIntent
     attackIntent = false;
 }
 
-void GameAI::executeDodge(MoveIntent& moveIntent, AttackIntent& attackIntent) {
-    // 预留：闪避逻辑
+bool GameAI::shouldDodge()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return false;
+
+    // 闪避冷却时间
+    if (m_lastDodgeTime > 0) {
+        m_lastDodgeTime--;
+        return false;
+    }
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+
+    // 获取对手武器类型（你需要实现这个接口）
+    Player::WeaponType enemyWeapon = targetPlayer->weapon; // 需要你在widget中提供
+
+    float dist = distance(aiPos, targetPos);
+
+    // 对手有枪械且在同一高度
+    if ((enemyWeapon == Player::WeaponType::rifle || enemyWeapon == Player::WeaponType::sniper) &&
+        abs(targetPos.y() - aiPos.y()) <= 80.0f) {
+        return true;
+    }
+
+    // 对手扔实心球，距离较近时闪避
+    if (enemyWeapon == Player::WeaponType::ball && dist < 400.0f) {
+        return true;
+    }
+
+    return false;
+}
+
+void GameAI::executeDodge(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return;
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+
+    Player::WeaponType enemyWeapon = targetPlayer->weapon;
+    float dist = distance(aiPos, targetPos);
+
+    if (enemyWeapon == Player::WeaponType::rifle || enemyWeapon == Player::WeaponType::sniper) {
+        // 对付枪械：疯狂跳跃干扰瞄准
+        if (isPlayerOnGround(aiPlayer)) {
+            moveIntent = MoveIntent::JUMP;
+        }
+
+        // 但不能放弃进攻机会！
+        // 如果距离合适且有好武器，边跳边靠近
+        // if (dist > 120.0f && isRangedWeapon(m_currentWeapon)) {
+        //     // 一边跳一边靠近
+        //     float dx = targetPos.x() - aiPos.x();
+        //     if (abs(dx) > 20.0f) {
+        //         MoveIntent approachMove = (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+
+        //         // 50%概率跳跃，50%概率靠近
+        //         if (m_dis(m_gen) > 0.5) {
+        //             moveIntent = MoveIntent::JUMP;
+        //         } else {
+        //             moveIntent = approachMove;
+        //         }
+        //     }
+        // }
+
+        // // 在合适距离内可以反击
+        // if (dist <= 200.0f && isRangedWeapon(m_currentWeapon)) {
+        //     attackIntent = true; // 边闪避边反击
+        // }
+
+        m_lastDodgeTime = 15; // 短冷却，保持跳跃频率
+    }
+    else if (enemyWeapon == Player::WeaponType::ball) {
+        // 对付实心球：执行撤退逻辑
+        executeRetreat(moveIntent, attackIntent);
+        m_lastDodgeTime = 40; // 较长冷却
+    }
+    else {
+        // 其他情况回到正常状态
+        executeFollow(moveIntent, attackIntent);
+    }
 }
 
 void GameAI::executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent)
@@ -418,7 +590,7 @@ bool GameAI::shouldSeekWeapon()
     if (!aiPlayer) return false;
 
     // 血量很低时优先保命
-    float healthRatio = (float)aiPlayer->hp / 100;
+    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
     if (healthRatio < 0.25f) return false;
 
     // 获取当前武器优先级
@@ -560,7 +732,7 @@ void GameAI::executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackInt
     float maxRange = getRangedAttackDistance(m_currentWeapon);
 
     // 距离太近，需要拉开距离
-    if (dist < 200.0f) {
+    if (dist < 150.0f) {
         // 简单后退：往反方向移动
         float dx = aiPos.x() - targetPos.x();
         if (abs(dx) > 10.0f) {
@@ -618,7 +790,7 @@ bool GameAI::shouldSeekArmor() {
     if (!aiPlayer) return false;
 
     // 血量很低时优先保命
-    float healthRatio = (float)aiPlayer->hp / 100;
+    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
     if (healthRatio < 0.15f) return false;
 
     Player::WeaponType opponentWeapon = m_targetPlayer.lock()->weapon;
@@ -643,13 +815,12 @@ bool GameAI::shouldSeekArmor() {
 
     return false; // 没有想要的护甲，放弃
 }
-bool GameAI::shouldDodge() { return false; }
 bool GameAI::shouldSeekSupply() {
     auto aiPlayer = m_aiPlayer.lock();
     if (!aiPlayer) return false;
 
     // 血量很低时优先保命
-    float healthRatio = (float)aiPlayer->hp / 100;
+    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
     if (healthRatio > 0.5f) return false;
     if (m_targetPlayer.lock()->hp < 20){
         return false; // 对手也快没血了，激进策略
@@ -693,7 +864,7 @@ QPointF GameAI::findBestSupply() {
     auto aiPlayer = m_aiPlayer.lock();
     if (!aiPlayer) return QPointF();
 
-    float healthRatio = (float)aiPlayer->hp / 100; // 100不准确！
+    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
 
     if (healthRatio > 0.6){
         return QPointF(); // 血量很充足，先作战

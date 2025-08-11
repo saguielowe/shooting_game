@@ -22,6 +22,9 @@ public:
     void modifyvelocity(float ratio){
         velocityratio = ratio;
     }
+    static float getMaxHp(){
+        return maxHp;
+    }
 
     bool isShooting = false;
     bool onGround = false;

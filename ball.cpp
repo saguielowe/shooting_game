@@ -1,6 +1,7 @@
 #include "ball.h"
 #include "map.h"
 #include "CollisionResult.h"
+#include "player.h"
 #include "soundmanager.h"
 #include <QPixmap>
 #include <QDebug>
@@ -63,7 +64,7 @@ float Ball::getDamage(int id){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
     //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
-    return fmin(40, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y())); // 实心球是破甲伤害，削弱其最大伤害
+    return fmin(Player::getMaxHp()*0.4, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y())); // 实心球是破甲伤害，削弱其最大伤害
 }
 
 bool Ball::shouldBeRemoved(){

@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QDebug>
 #include <cmath>
+#include <QQueue>
 #include <random>
 #include "player.h"
 #include "map.h"
@@ -148,7 +149,14 @@ private:
     bool isRangedWeapon(const QString& weaponType) const;
     void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
     float getRangedAttackDistance(const QString& weaponType) const;
+private:
+    // 预定动作序列
+    QQueue<MoveIntent> m_plannedMoves;     // 预定的动作队列
+    bool m_executingPlan;                  // 是否在执行预定计划
 
+public:
+    void planMoveSequence(const QVector<MoveIntent>& moves); // 设定动作序列
+    bool isExecutingPlan() const { return m_executingPlan; }
 
 private:
     // 玩家引用
@@ -179,6 +187,14 @@ private:
     int my_platform;
     bool m_wasJumping;
     int m_jumpCooldown;
+    int m_lastDodgeTime;      // 闪避冷却时间
+    QPointF m_lastPosition;           // 上一帧的位置
+    int m_stuckCounter;               // 卡住计数器
+    static const int STUCK_THRESHOLD = 40;        // 3秒无移动算卡住(60帧)
+    static const int TARGET_REFRESH_THRESHOLD = 100; // 5秒强制刷新目标
+
+    bool isStuck();                   // 检测是否卡住
+    void handleStuckSituation(MoveIntent& moveIntent); // 处理卡住情况
 
     // 预留：随机数生成器（用于后续功能）
     std::random_device m_rd;

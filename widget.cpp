@@ -175,6 +175,9 @@ void Widget::gameLoop() {
     AttackIntent attackIntent = false;
 
     ai->updateIntent(moveIntent, attackIntent);
+    if (currentScene == "grass" && moveIntent == MoveIntent::NONE){
+        moveIntent = MoveIntent::CROUCH; // 草地背景下不动就蹲下
+    }
 
     intent[1].moveIntent = moveIntent;
     intent[1].attackIntent = attackIntent;
