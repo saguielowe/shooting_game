@@ -5,62 +5,133 @@
 #include <QLabel>
 #include "./ui_widget.h"
 
-Widget::Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, int maxSnipers, QWidget *parent)
-    : QWidget(parent), currentScene(scene), m_maxHp(maxHp), m_maxBalls(maxBalls), m_maxBullets(maxBullets), m_maxSnipers(maxSnipers)
+Widget::Widget(const GameSession& session, QWidget *parent)
+    : QWidget(parent)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
 {
+    timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
+    applySession(session);
+    initGame();
+    qDebug() <<"game initialized.";
     setFocusPolicy(Qt::StrongFocus);  // 获取键盘焦点
-    if (currentScene == "ice"){
-        Player::initSettings(false, 1.5, maxHp, maxBalls, maxBullets, maxSnipers);
-    }
-    else if (currentScene == "grass"){
-        Player::initSettings(true, 1.0, maxHp, maxBalls, maxBullets, maxSnipers);
-    }
-    else{
-        Player::initSettings(false, 1.0, maxHp, maxBalls, maxBullets, maxSnipers);
-    }
-    scenePixmap = Map::getInstance().loadScene(scene);
-    //qDebug() <<"scene loaded";
+
     SoundManager::instance().preload("crash");
     SoundManager::instance().preload("rifle");
     SoundManager::instance().preload("knife");
     SoundManager::instance().preload("sniper");
     SoundManager::instance().preload("hit");
-    intent[0].moveIntent = MoveIntent::NONE;
-    intent[0].attackIntent = false;
-    intent[1].moveIntent = MoveIntent::NONE;
-    intent[1].attackIntent = false;
-    auto p1 = std::make_shared<Player>(100, 600, 0);
-    auto p2 = std::make_shared<Player>(800, 600, 1);
+
+    qDebug() <<"scene loaded";
+
+    ui->setupUi(this);
+}
+
+void Widget::applySession(const GameSession& session) {
+    currentSession = session;
+    currentScene   = session.scene;
+
+    // 场景决定速度倍率，其他参数直接从 session 读
+    // 替代原来的 Player::initSettings（static，之后要改掉）
+    // 现在先保留兼容，等 static 改成实例成员后这里直接删
+    float speedRatio = (session.scene == "ice") ? 1.5f : 1.0f;
+
+    scenePixmap = Map::getInstance().loadScene(session.scene);
+    qDebug() << "session loaded.";
+}
+
+void Widget::initGame() {
+    // ---- 重置 intent ------------------------------------
+    intent[0] = {MoveIntent::NONE, false};
+    intent[1] = {MoveIntent::NONE, false};
+
+    bool   canHide    = (currentSession.scene == "grass");
+    float  speedRatio = (currentSession.scene == "ice") ? 1.5f : 1.0f;
+
+    auto p1 = std::make_shared<Player>(
+        100, 600, 0,
+        currentSession.maxHp,
+        currentSession.maxBalls,
+        currentSession.maxBullets,
+        currentSession.maxSnipers,
+        canHide, speedRatio
+        );
+    auto p2 = std::make_shared<Player>(
+        800, 600, 1,
+        currentSession.maxHp,
+        currentSession.maxBalls,
+        currentSession.maxBullets,
+        currentSession.maxSnipers,
+        canHide, speedRatio
+        );
 
     auto c1 = std::make_shared<PlayerController>();
     auto c2 = std::make_shared<PlayerController>();
 
-    c1->bindPlayer(p1);  // 用 weak_ptr 持有
+    c1->bindPlayer(p1);
     c2->bindPlayer(p2);
 
     players.push_back(p1);
     players.push_back(p2);
-
     controllers.push_back(c1);
     controllers.push_back(c2);
-    //qDebug() <<"player spawned";
 
-    timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
+    qDebug() << "player spawned";
+
+    // ---- 信号槽 -----------------------------------------
     connect(c1.get(), &PlayerController::requestThrowBall,
             this, &Widget::onPlayerRequest);
     connect(c2.get(), &PlayerController::requestThrowBall,
             this, &Widget::onPlayerRequest);
-    timer->start(16);  // 约 60fps
-    lastTime.start();
-    //qDebug() <<"timer started";
-    ai->setAIPlayer(players[1]);        // AI控制的玩家
-    ai->setTargetPlayer(players[0]);    // 人类玩家
-    ai->setFollowDistance(80.0f);    // 跟随距离
-    ai->setDifficulty(5);            // 难度1-10
-    ui->setupUi(this);
+
+    // ---- AI（人机/无尽模式启动，双人不启动）------------
+    if (currentSession.mode != GameSession::Mode::PVP) {
+        ai->setAIPlayer(players[1]);
+        ai->setTargetPlayer(players[0]);
+        ai->setFollowDistance(80.0f);
+        ai->setDifficulty(5);
+        ai->startAI();
+    }
+
+    qDebug() << "ai is ready";
+
+    // ---- 计时器 -----------------------------------------
+    lastTime.restart();
+    timer->start(16);
+    qDebug()<<"timer started";
 }
+
+void Widget::cleanupGame() {
+    timer->stop();
+    ai->stopAI();
+
+    // 断开 controller 的信号，防止 clear 后还有回调
+    for (auto& c : controllers)
+        disconnect(c.get(), nullptr, this, nullptr);
+
+    players.clear();
+    controllers.clear();
+    entities.clear();
+    drops.clear();
+    balls.clear();
+    bullets.clear();
+}
+
+// 新增 resetGame，供 MainWindow 调用
+// 流程：gameEnd -- roundend signal -- resetGame -- cleanup -- apply+init -- start timer
+void Widget::resetGame(const GameSession& session) {
+    qDebug()<<"game reset for next round";
+    cleanupGame();
+
+    // 重新应用 session 参数并初始化
+    applySession(session);
+    // 上一轮结束后终止了timer连接，需要复原。
+    connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
+    initGame();
+
+    timer->start(16);
+}
+
 void Widget::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     if (!scenePixmap.isNull()) {
@@ -80,8 +151,6 @@ void Widget::paintEvent(QPaintEvent*) {
             entity->draw(painter);
         }
     }
-
-    ai->draw(painter);
 }
 /*
 inputIntent: 输入意图。
@@ -93,52 +162,35 @@ inputIntent: 输入意图。
 */
 void Widget::keyPressEvent(QKeyEvent* event) {
     emit keyPressed();
-    if (event->key() == Qt::Key_A) {
-        intent[0].moveIntent = MoveIntent::MOVING_LEFT; // 同时按下左右键优先处理左键
-    }
-    else if (event->key() == Qt::Key_D) {
-        intent[0].moveIntent = MoveIntent::MOVING_RIGHT;
-    }
-    else if (event->key() == Qt::Key_W) {
-        intent[0].moveIntent = MoveIntent::JUMP;
-    }
-    else if (event->key() == Qt::Key_S) { // player部分默认已经在widget处检查过合法状态转移
+    pressedKeys.insert(event->key());
+    updateIntents();
+}
+void Widget::updateIntents() {
+    // P1
+    if (pressedKeys.contains(Qt::Key_W)) intent[0].moveIntent = MoveIntent::JUMP; // 优先处理跳跃下蹲，允许同时按下双键
+    else if (pressedKeys.contains(Qt::Key_S)) { // player部分默认已经在widget处检查过合法状态转移
         intent[0].moveIntent = MoveIntent::CROUCH;
     }
-    else {
-        intent[0].moveIntent = MoveIntent::NONE;
-    }
-
-    if (event->key() == Qt::Key_E) {
-        intent[0].attackIntent = true;
-    }
-    else{
-        intent[0].attackIntent = false;
-    }
-
-    if (event->key() == Qt::Key_J) {
-        intent[1].moveIntent = MoveIntent::MOVING_LEFT; // 同时按下左右键优先处理左键
-    }
-    else if (event->key() == Qt::Key_L) {
-        intent[1].moveIntent = MoveIntent::MOVING_RIGHT;
-    }
-    else if (event->key() == Qt::Key_I) {
-        intent[1].moveIntent = MoveIntent::JUMP;
-    }
-    else if (event->key() == Qt::Key_K) { // player部分默认已经在widget处检查过合法状态转移
+    else if (pressedKeys.contains(Qt::Key_A)) intent[0].moveIntent = MoveIntent::MOVING_LEFT;
+    else if (pressedKeys.contains(Qt::Key_D)) intent[0].moveIntent = MoveIntent::MOVING_RIGHT;
+    else intent[0].moveIntent = MoveIntent::NONE;
+    intent[0].attackIntent = pressedKeys.contains(Qt::Key_E);
+    // P2同理
+    if (pressedKeys.contains(Qt::Key_I)) intent[1].moveIntent = MoveIntent::JUMP;
+    else if (pressedKeys.contains(Qt::Key_K)) { // player部分默认已经在widget处检查过合法状态转移
         intent[1].moveIntent = MoveIntent::CROUCH;
     }
-    else {
-        intent[1].moveIntent = MoveIntent::NONE;
-    }
-
-    if (event->key() == Qt::Key_O) {
-        intent[1].attackIntent = true;
-    }
-
+    else if (pressedKeys.contains(Qt::Key_J)) intent[1].moveIntent = MoveIntent::MOVING_LEFT;
+    else if (pressedKeys.contains(Qt::Key_L)) intent[1].moveIntent = MoveIntent::MOVING_RIGHT;
+    else intent[1].moveIntent = MoveIntent::NONE;
+    intent[1].attackIntent = pressedKeys.contains(Qt::Key_O);
+    //qDebug()<<intent[1].moveIntent;
 }
 
-void Widget::keyReleaseEvent(QKeyEvent* event) {
+
+void Widget::keyReleaseEvent(QKeyEvent* event) { // 按键 --> 意图
+    pressedKeys.remove(event->key());
+    updateIntents(); // 可以边走边打，但移动时不能跳起/蹲下，需要处理。
     if (event->key() == Qt::Key_A || event->key() == Qt::Key_S || event->key() == Qt::Key_W || event->key() == Qt::Key_D) {
         intent[0].moveIntent = MoveIntent::NONE;
     }
@@ -150,7 +202,12 @@ void Widget::keyReleaseEvent(QKeyEvent* event) {
 }
 
 void Widget::gameLoop() {
+    if (players.size() < 2) { qDebug() << "players not ready"; return; }
+
+    if (!controllers[0] || !controllers[1]) { qDebug() << "controllers null"; return; }
+
     float dt = lastTime.restart() / 1000.0f;
+    //qDebug() << dt;
     if (dt > 0.05) qDebug() << 1 / dt;
     if (QRandomGenerator::global()->bounded(1000) < 3) {
         spawnDrop(); // 每帧尝试生成掉落物
@@ -171,17 +228,19 @@ void Widget::gameLoop() {
     players[0]->setDt(dt); // 万一卡顿根据真实帧数设置dt
     players[1]->setDt(dt);
 
-    MoveIntent moveIntent = MoveIntent::NONE;
-    AttackIntent attackIntent = false;
 
-    ai->updateIntent(moveIntent, attackIntent);
-    if (currentScene == "grass" && moveIntent == MoveIntent::NONE){
-        moveIntent = MoveIntent::CROUCH; // 草地背景下不动就蹲下
+
+    if(currentSession.mode == GameSession::Mode::AI){
+        MoveIntent moveIntent = MoveIntent::NONE;
+        AttackIntent attackIntent = false;
+        ai->updateIntent(moveIntent, attackIntent);
+        if (currentScene == "grass" && moveIntent == MoveIntent::NONE){
+            moveIntent = MoveIntent::CROUCH; // 草地背景下不动就蹲下
+        }
+        intent[1].moveIntent = moveIntent;
+        intent[1].attackIntent = attackIntent;
+        //qDebug() << moveIntent << attackIntent;
     }
-
-    intent[1].moveIntent = moveIntent;
-    intent[1].attackIntent = attackIntent;
-    //qDebug() << moveIntent << attackIntent;
     controllers[0]->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
     controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
     cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
@@ -295,7 +354,6 @@ void Widget::gameEnd(int id)
         timer->stop();
         disconnect(timer, nullptr, this, nullptr);
     }
-    disconnect(this, nullptr, nullptr, nullptr);
 
     // 2. 不要提前清空 players/entities！
     //    先留着，paintEvent 还能画最后一帧完整画面
@@ -319,19 +377,13 @@ void Widget::gameEnd(int id)
     // 4. 抢键盘焦点，捕捉“任意键”
     grabKeyboard();
 
-    // ✅ 用一次性连接，避免多次触发
-    connect(this, &Widget::keyPressed, this, [=]() mutable {
-        releaseKeyboard();  // 释放键盘
-
-        // 5. 延迟一帧再新建，保证事件栈安全退出
-        QTimer::singleShot(0, this, [=]() mutable {
-            // ✅ 新建干净的 Widget（它自己会加载地图/初始化状态）
-            Widget *newGame = new Widget(currentScene, m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers);
-            newGame->setFixedSize(this->size());
-            newGame->show();
-            newGame->setFocus();   // ✅ 立刻接收输入
+    connect(this, &Widget::keyPressed, this, [=]() {
+        releaseKeyboard();
+        overlay->hide(); // 重新开始后遮罩解除
+        QTimer::singleShot(0, this, [=]() {
+            emit roundEnded(id);
         });
-    });
+    }, Qt::SingleShotConnection);
 }
 
 void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id) {

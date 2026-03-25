@@ -41,6 +41,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         bullet.h bullet.cpp
         soundmanager.h soundmanager.cpp
         gameai.h gameai.cpp
+        mainwindow.h mainwindow.cpp
+        setupwidget.cpp setupwidget.h
+        gamesession.h
     )
 else()
     if(ANDROID)

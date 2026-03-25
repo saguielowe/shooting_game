@@ -10,6 +10,7 @@
 #include "ball.h"
 #include "map.h"
 #include "playercontroller.h"
+#include "gamesession.h"
 #include "combatmanager.h"
 #include "dropitem.h"
 #include "bullet.h"
@@ -27,7 +28,8 @@ class Widget : public QWidget
     Q_OBJECT
 
 public:
-    Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, int maxSnipers, QWidget *parent = nullptr);
+    Widget(const GameSession& session, QWidget *parent = nullptr);
+    void resetGame(const GameSession& session);
     void updateDrops(float dt);
     void updateBalls(float dt);
     void drawDrops(QPainter& painter);
@@ -44,11 +46,17 @@ private slots:
     void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id);
 signals:
     void keyPressed();
+    void roundEnded(int winnerId);  // 一局结束，传赢家 id
 private:
+    void applySession(const GameSession& session);
+    void initGame(); // 读取game session信息后，给玩家赋初值。
+    void cleanupGame();
     void spawnDrop();
     void updateAIInfo();
     void gameEnd(int id);
+    void updateIntents();
 
+    GameSession currentSession;
     struct inputIntent {
         MoveIntent moveIntent;
         bool attackIntent;
@@ -74,5 +82,7 @@ private:
 
     int m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers;
     QPixmap scenePixmap;
+
+    QSet<int> pressedKeys;
 };
 #endif // WIDGET_H

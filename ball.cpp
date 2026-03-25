@@ -64,7 +64,8 @@ float Ball::getDamage(int id){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
     //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
-    return fmin(Player::getMaxHp()*0.4, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y())); // 实心球是破甲伤害，削弱其最大伤害
+    return fmin(100, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y())); // 实心球是破甲伤害，削弱其最大伤害
+    // 这里要改为最大生命值的40%，等待获取player信息
 }
 
 bool Ball::shouldBeRemoved(){

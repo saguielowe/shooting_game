@@ -1,12 +1,28 @@
 #include "player.h"
 #include <QDebug>
-float Player::velocityratio = 1;
-bool Player::canHide = false;
-float Player::maxHp = 100;
-int Player::maxBalls = 3;
-int Player::maxBullets = 3;
-int Player::maxSnipers = 1;
-Player::Player(float x, float y, int id) : x(x), y(y), id(id) {
+Player::Player(float x, float y, int id,
+               float initMaxHp, int initMaxBalls,
+               int initMaxBullets, int initMaxSnipers,
+               bool initCanHide, float initSpeedRatio)
+    : id(id)
+    , x(x), y(y), dt(0)
+    , hp(initMaxHp)
+    , maxHp(initMaxHp)
+    , maxBalls(initMaxBalls)
+    , maxBullets(initMaxBullets)
+    , maxSnipers(initMaxSnipers)
+    , canHide(initCanHide)
+    , velocityratio(initSpeedRatio)
+    , selfvelocityratio(1.0f)
+    , ballCount(0)
+    , bulletCount(0)
+    , hpRegenerate(false)
+    , regenerateTime(0)
+    , direction(1)
+    , weapon(WeaponType::punch)
+    , armor(ArmorType::noArmor)
+    , vestHardness(100)
+{
     qDebug()<<"loading animation assets……";
     animation.load("idle", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Idle.png", 120, 10);
     animation.load("run", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_Run.png", 120, 10);
