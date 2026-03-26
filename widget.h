@@ -91,5 +91,7 @@ private:
     QPixmap scenePixmap;
 
     QSet<int> pressedKeys;
+    void drawStatusBar(QPainter& painter, int playerIndex);
+    QString spellName(GameSession::Spell spell) const;
 };
 #endif // WIDGET_H

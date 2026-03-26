@@ -28,6 +28,17 @@ static bool playerHasUniqueModifier(const std::shared_ptr<Player>& p, ModifierTy
     default: return false;
     }
 }
+static QString weaponShortName(Player::WeaponType w) { // 武器名称简写，用于状态栏显示
+    switch (w) {
+    case Player::WeaponType::punch:  return "拳";
+    case Player::WeaponType::knife:  return "刀";
+    case Player::WeaponType::ball:   return "球";
+    case Player::WeaponType::rifle:  return "步枪";
+    case Player::WeaponType::sniper: return "狙击";
+    }
+    return "?";
+}
+
 Widget::Widget(const GameSession& session, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
@@ -53,6 +64,134 @@ Widget::Widget(const GameSession& session, QWidget *parent)
     connect(modifierOverlay, &ModifierOverlay::optionChosen,
             this, &Widget::onModifierChosen);
     ui->setupUi(this);
+}
+ 
+QString Widget::spellName(GameSession::Spell spell) const {
+    switch (spell) {
+    case GameSession::Spell::FREEZE:    return "定身";
+    case GameSession::Spell::STEALTH:   return "隐身";
+    case GameSession::Spell::BARRIER:   return "安身法";
+    case GameSession::Spell::IRON_BODY: return "铜头铁臂";
+    case GameSession::Spell::CLONE:     return "身外身法";
+    case GameSession::Spell::FORBIDDEN: return "禁字法";
+    default:                            return "无法术";
+    }
+}
+ 
+void Widget::drawStatusBar(QPainter& painter, int playerIndex) { // 绘制玩家状态栏（武器槽、法术CD、词条等）
+    if (playerIndex >= players.size()) return;
+    auto& p = players[playerIndex];
+ 
+    // ── 布局参数 ─────────────────────────────────────────────
+    const int panelW  = 130;
+    const int marginX = 6;
+    const int startY  = 60;   // 顶部留给血条
+    const int padX    = 8;
+    const int padY    = 6;
+    const int lineH   = 18;
+ 
+    // 右侧面板：x从右边计算
+    int panelX = (playerIndex == 0)
+        ? marginX
+        : width() - marginX - panelW;
+ 
+    // ── 计算总高度（动态，取决于词条行数）───────────────────
+    QStringList modLines = p->getModifierSummary();
+    // 武器槽区：每个槽一行 + 标题1行
+    int slotCount = p->weaponSlots.size();
+    int sectionWeapon  = lineH + slotCount * lineH + padY;
+    // 法术CD区：标题1行 + 进度条1行 + 数字1行
+    int sectionSpell   = lineH + lineH + lineH + padY;
+    // 词条区：标题1行 + 词条行
+    int sectionModifier= lineH + modLines.size() * lineH + padY;
+    int totalH = padY + sectionWeapon + sectionSpell + sectionModifier + padY;
+ 
+    // ── 半透明背景 ───────────────────────────────────────────
+    painter.save();
+    painter.setBrush(QColor(0, 0, 0, 150));
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(panelX, startY, panelW, totalH, 8, 8);
+ 
+    // 文字基础设置
+    QFont font = painter.font();
+    font.setPixelSize(13);
+    painter.setFont(font);
+ 
+    int cx = panelX + padX;       // 文字左起点（右侧面板也用同一套，mirror靠对齐方式）
+    int textW = panelW - padX * 2;
+    int y = startY + padY;
+ 
+    auto drawLine = [&](const QString& text, QColor color,
+                        Qt::Alignment align = Qt::AlignLeft) {
+        painter.setPen(color);
+        painter.drawText(QRect(cx, y, textW, lineH), align | Qt::AlignVCenter, text);
+        y += lineH;
+    };
+ 
+    // ── 武器槽 ───────────────────────────────────────────────
+    drawLine("[ 武器槽 ]", QColor(180, 180, 255));
+    for (int i = 0; i < p->weaponSlots.size(); ++i) {
+        bool isActive = (i == p->activeSlotIndex);
+        QString label = isActive
+            ? QString("▶ %1").arg(weaponShortName(p->weaponSlots[i]))
+            : QString("  %1").arg(weaponShortName(p->weaponSlots[i]));
+        drawLine(label, isActive ? QColor(255, 230, 80) : QColor(170, 170, 170));
+    }
+    y += padY;
+ 
+    // ── 法术 CD ──────────────────────────────────────────────
+    GameSession::Spell mySpell = (playerIndex == 0)
+        ? currentSession.spellP1
+        : currentSession.spellP2;
+ 
+    drawLine(spellName(mySpell), QColor(180, 180, 255));
+ 
+    // 进度条
+    const SpellState& ss = p->spellState;
+    float ratio = ss.cooldownRatio(); // 0=刚用完/冷却中，1=可用
+    int barW  = textW;
+    int barH  = 10;
+    int barY  = y + (lineH - barH) / 2;
+ 
+    // 背景
+    painter.setBrush(QColor(60, 60, 60));
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(cx, barY, barW, barH, 3, 3);
+ 
+    // 填充（可用=绿，冷却中=橙）
+    QColor barColor = ss.isOnCooldown() ? QColor(220, 140, 40) : QColor(80, 200, 80);
+    int fillW = int(barW * ratio);
+    if (fillW > 0) {
+        painter.setBrush(barColor);
+        painter.drawRoundedRect(cx, barY, fillW, barH, 3, 3);
+    }
+    y += lineH;
+ 
+    // 冷却数字
+    QString cdText = ss.isOnCooldown()
+        ? QString("CD: %1s").arg(ss.cooldownRemain, 0, 'f', 1)
+        : "就绪";
+    drawLine(cdText, ss.isOnCooldown() ? QColor(220, 140, 40) : QColor(80, 200, 80));
+    y += padY;
+ 
+    // ── 活跃状态提示（定身/隐身中）──────────────────────────
+    if (ss.isFrozen)
+        drawLine(QString("定身中 %1s").arg(ss.frozenRemain, 0, 'f', 1),
+                 QColor(100, 200, 255));
+    if (ss.stealthActive)
+        drawLine(QString("隐身中 %1s").arg(ss.stealthRemain, 0, 'f', 1),
+                 QColor(180, 100, 255));
+ 
+    // ── 词条摘要 ─────────────────────────────────────────────
+    drawLine("[ 词条 ]", QColor(180, 180, 255));
+    if (modLines.isEmpty()) {
+        drawLine("无", QColor(100, 100, 100));
+    } else {
+        for (auto& line : modLines)
+            drawLine(line, QColor(200, 220, 200));
+    }
+ 
+    painter.restore();
 }
 
 void Widget::applySession(const GameSession& session) {
@@ -203,6 +342,8 @@ void Widget::paintEvent(QPaintEvent*) {
             entity->draw(painter);
         }
     }
+    drawStatusBar(painter, 0);
+    drawStatusBar(painter, 1);
 }
 /*
 inputIntent: 输入意图。

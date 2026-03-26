@@ -5,6 +5,8 @@
 #include "animation.h"
 #include "map.h"
 #include "modifierdata.h"
+#include "gamesession.h"
+#include "spellstate.h"
 
 class Player
 {
@@ -115,6 +117,28 @@ public:
 
     // ── player.h 修改后的接口 ───────────────────────────────────
     void  applyModifier(const ModifierData& mod);
+    SpellState spellState;
+    GameSession::Spell spell = GameSession::Spell::NONE; // 本局法术，从session读
+ 
+    // 武器槽位
+    QVector<WeaponType> weaponSlots;   // 当前持有的武器列表
+    int activeSlotIndex = 0;           // 当前激活槽
+ 
+    void switchWeaponSlot();           // C/N键调用，循环切换
+    bool pickupWeapon(WeaponType w);   // 捡武器时调用，返回是否成功
+    int  maxWeaponSlots() const {      // 当前最大槽数
+        return 1 + modifiers.extraWeaponSlots;
+    }
+    WeaponType currentWeapon() const { // 当前激活武器
+        if (weaponSlots.isEmpty()) return WeaponType::punch;
+        return weaponSlots[activeSlotIndex];
+    }
+ 
+    // 词条摘要，供状态栏绘制
+    QStringList getModifierSummary() const;
+ 
+    // initMaxHp：出厂血量上限，词条倍率基于它，不要基于当前maxHp叠乘
+    float initMaxHp = 100.f;  // 在构造函数里赋值为传入的maxHp参数
 
     /* mode=0 正常模式
      * mode=1 投掷模式：实心球可投掷数量翻倍

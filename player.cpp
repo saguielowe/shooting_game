@@ -35,6 +35,7 @@ Player::Player(float x, float y, int id,
     animation.load("gun", ":/assets/assets/FreeKnight_v1/Colour1/Outline/120x80_PNGSheets/_gun.png", 120, 2);
 
     animation.play("idle");
+    weaponSlots.append(WeaponType::punch); // 初始武器放进槽位
 }
 void Player::setDt(float t){
     dt = t;
@@ -409,4 +410,61 @@ float Player::getDefenseMultiplier(WeaponType weaponType) const {
     float multiplier = 1.0f - totalReduction;
     if (modifiers.doubleEdge) multiplier *= 2.f;
     return multiplier;
+}
+
+void Player::switchWeaponSlot() {
+    if (weaponSlots.size() <= 1) return;
+    activeSlotIndex = (activeSlotIndex + 1) % weaponSlots.size();
+    weapon = weaponSlots[activeSlotIndex];
+}
+ 
+bool Player::pickupWeapon(WeaponType w) {
+    // 已有此武器，不重复捡
+    if (weaponSlots.contains(w)) return false;
+ 
+    if (weaponSlots.size() < maxWeaponSlots()) {
+        // 有空槽，直接加入
+        weaponSlots.append(w);
+    } else {
+        // 无空槽，替换当前槽
+        weaponSlots[activeSlotIndex] = w;
+    }
+    // 激活刚捡的武器
+    activeSlotIndex = weaponSlots.indexOf(w);
+    weapon = w;
+    return true;
+}
+ 
+// ── 词条摘要 ─────────────────────────────────────────────────
+ 
+QStringList Player::getModifierSummary() const {
+    QStringList lines;
+    const auto& m = modifiers;
+ 
+    if (m.moveSpeedMultiplier != 1.f)
+        lines << QString("速度 %1%").arg(int((m.moveSpeedMultiplier - 1.f) * 100));
+    if (m.damageBonusMultiplier != 1.f)
+        lines << QString("伤害 +%1%").arg(int((m.damageBonusMultiplier - 1.f) * 100));
+    if (m.damageReduction != 0.f)
+        lines << QString("减伤 %1%").arg(int(m.damageReduction * 100));
+    if (m.maxHpMultiplier != 1.f)
+        lines << QString("血上限 %1%").arg(int(m.maxHpMultiplier * 100));
+    if (m.punchDmgMultiplier != 1.f)
+        lines << QString("拳 x%.1f").arg(m.punchDmgMultiplier);
+    if (m.knifeDmgMultiplier != 1.f)
+        lines << QString("刀 x%.1f").arg(m.knifeDmgMultiplier);
+    if (m.ballDmgMultiplier != 1.f)
+        lines << QString("球 x%.1f").arg(m.ballDmgMultiplier);
+    if (m.gunDmgMultiplier != 1.f)
+        lines << QString("枪 x%.1f").arg(m.gunDmgMultiplier);
+    if (m.doubleEdge)
+        lines << "两败俱伤";
+    if (m.extraWeaponSlots > 0)
+        lines << QString("武器槽 +%1").arg(m.extraWeaponSlots);
+    if (m.freezeDurationBonus > 0)
+        lines << QString("定身 +%1s").arg(int(m.freezeDurationBonus));
+    if (m.stealthDurationBonus > 0)
+        lines << QString("隐身 +%1s").arg(int(m.stealthDurationBonus));
+ 
+    return lines;
 }
