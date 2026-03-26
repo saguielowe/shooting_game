@@ -3,10 +3,11 @@
 #include "map.h"
 #include <QDebug>
 
-Bullet::Bullet(QPointF pos, float vx, int type, int id) : Entity(pos, id), type(type) {
+Bullet::Bullet(QPointF pos, float vx, int type, float initDamage, int id) : Entity(pos, id), type(type) {
     velocity = QPointF(vx, 0);
     QString path = ":/items/assets/items/bullet.png";
     pixmap = QPixmap(path).scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    basicDamage = initDamage;
 }
 
 void Bullet::draw(QPainter& painter) {
@@ -34,10 +35,10 @@ float Bullet::getDamage(int id){
     qDebug() << "受伤者： "<<id<<"储存的发射者： "<<parentId;
     if (parentId == id) return 0;
     if (type == 1){
-        return 30;
+        return basicDamage * 30; // 步枪基础伤害30
     }
     else if (type == 2){
-        return 60;
+        return basicDamage * 60; // 狙击枪基础伤害60
     }
 }
 

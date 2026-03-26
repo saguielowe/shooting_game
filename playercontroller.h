@@ -16,15 +16,21 @@ public:
         return player.lock() == nullptr; // ✅ 玩家已被销毁
     }
     void handleIntent(MoveIntent moveIntent, bool attackIntent);
-    void receiveHit(float damage, QString direction);
+    void receiveHit(float damage, Player::WeaponType weaponType, QString direction);
     QRect getHitbox();
     bool canAttack() const { return player.lock()->state.shootState; }
     void triggerAttackCooldown(float time=1) { cooldowns["attack"] = time; }
     int getId() { return player.lock()->id; }
     Player::WeaponType getWeaponType();
+    float getAttackDamage() const {
+        return player.lock()->getAttackDamage(); // 纯转发，没加任何逻辑
+    }
+    float getDefenseMultiplier(Player::WeaponType weaponType) const{
+        return player.lock()->getDefenseMultiplier(weaponType);
+    }
 
 signals:
-    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon, int id); // 🟩 投掷请求（不需要传目标）
+    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon, float damage, int id); // 🟩 投掷请求（不需要传目标）
 private:
     std::weak_ptr<Player> player;
     QMap <QString, float> cooldowns;

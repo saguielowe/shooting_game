@@ -58,7 +58,7 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         player.lock()->state.shootState = true; // 当按下攻击键且不处于冷却，判定可以攻击，打不打到无所谓
         triggerAttackCooldown();
         if (player.lock()->weapon == Player::WeaponType::ball){
-            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, player.lock()->id);
+            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, getAttackDamage(), player.lock()->id);
             player.lock()->ballCount --;
             if (player.lock()->ballCount == 0){
                 player.lock()->weapon = Player::WeaponType::punch;
@@ -66,11 +66,11 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         }
         else if (player.lock()->weapon == Player::WeaponType::rifle || player.lock()->weapon == Player::WeaponType::sniper){
             if (player.lock()->vx != 0){ // 此处步枪和狙击枪统一命令
-                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, player.lock()->id);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->id);
             }
             else{
                 float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
-                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, player.lock()->id);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->id);
             }
             if (player.lock()->weapon == Player::WeaponType::rifle) SoundManager::instance().play("rifle", 0.4);
             if (player.lock()->weapon == Player::WeaponType::sniper) SoundManager::instance().play("sniper", 0.6);
@@ -114,24 +114,28 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
 
 }
 
-void PlayerController::receiveHit(float damage, QString direction) {
+void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, QString direction) { // 护甲减伤在player controller里处理，因为涉及到护甲韧性，不放在defense multiplier里了
     if (cooldowns["hurt"] != 0){
         return; // 硬直状态不再受伤（每1秒最多只受一次伤）
     }
     if (damage < 1){
         return; // 忽略极小伤害，并且不给硬直
     }
+    if (weaponType == Player::WeaponType::ball){
+        damage = fmin(damage, 0.4 * player.lock()->maxHp); // 球类伤害上限，防止被远程攻击打出过高伤害
+        qDebug()<<"ball final damage:"<<damage;
+    }
 
     if (player.lock()->armor == Player::ArmorType::chainmail){
-        if (damage == 5){
+        if (weaponType == Player::WeaponType::punch){
             return; // 免疫拳击，且不受硬直
         }
-        else if (damage == 15){
+        else if (weaponType == Player::WeaponType::knife){
             damage /= 2; // 小刀伤害减半
         }
     }
     else if (player.lock()->armor == Player::ArmorType::vest && player.lock()->vestHardness > 0){
-        if (damage == 30 || damage == 60){
+        if (weaponType == Player::WeaponType::rifle || weaponType == Player::WeaponType::sniper){
             damage /= 2; // 防弹衣减免一半子弹伤害，并消耗耐久度承担这部分伤害
             player.lock()->vestHardness -= damage;
             if (player.lock()->vestHardness <= 0){

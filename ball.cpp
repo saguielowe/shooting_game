@@ -5,10 +5,11 @@
 #include "soundmanager.h"
 #include <QPixmap>
 #include <QDebug>
-Ball::Ball(QPointF pos, QPointF v, int id) : Entity(pos, id) {
+Ball::Ball(QPointF pos, QPointF v, float initDamage, int id) : Entity(pos, id) {
     qDebug() <<"【ball】："<<id;
     velocity = v;
     lifetime = 0;
+    basicDamage = initDamage;
     QString path = ":/items/assets/items/ball.png";
     pixmap = QPixmap(path).scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
@@ -64,8 +65,8 @@ float Ball::getDamage(int id){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
     //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
-    return fmin(100, basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y())); // 实心球是破甲伤害，削弱其最大伤害
-    // 这里要改为最大生命值的40%，等待获取player信息
+    return basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y()) / 100;
+    // 这里只计算削减前的伤害，削减在combat manager里根据玩家状态进行
 }
 
 bool Ball::shouldBeRemoved(){

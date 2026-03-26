@@ -4,11 +4,14 @@
 #include <QPushButton>
 #include <QLabel>
 #include "./ui_widget.h"
+#include <QScreen>
 
 Widget::Widget(const GameSession& session, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
 {
+
+    this->setFixedSize(1024, 1024);
     timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
     applySession(session);
@@ -99,6 +102,30 @@ void Widget::initGame() {
     lastTime.restart();
     timer->start(16);
     qDebug()<<"timer started";
+}
+
+// widget.cpp
+void Widget::showMatchResult(const QString& text) {
+    QLabel* overlay = new QLabel(this);
+    overlay->setGeometry(rect());
+    overlay->setStyleSheet(
+        "background: rgba(0, 0, 0, 180);"
+        "color: white;"
+        "font-size: 36px;"
+        "font-weight: bold;"
+    );
+    overlay->setAlignment(Qt::AlignCenter);
+    overlay->setText(text);
+    overlay->show();
+
+    grabKeyboard();
+    connect(this, &Widget::keyPressed, this, [=]() {
+        releaseKeyboard();
+        overlay->hide();
+        QTimer::singleShot(0, this, [=]() {
+            emit matchResultConfirmed();  // 新信号，玩家按键确认后
+        });
+    }, Qt::SingleShotConnection);
 }
 
 void Widget::cleanupGame() {
@@ -273,7 +300,7 @@ void Widget::spawnDrop() {
 
     if (categoryRoll < 50) { // 武器 50%
         int weaponRoll = QRandomGenerator::global()->bounded(100);
-        if (weaponRoll < 40) {
+        if (weaponRoll < 10) {
             itemName = "knife"; // 小刀 40%
         } else if (weaponRoll < 70) {
             itemName = "ball"; // 实心球 30%
@@ -386,8 +413,8 @@ void Widget::gameEnd(int id)
     }, Qt::SingleShotConnection);
 }
 
-void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id) {
-    qDebug() <<"【onplayer】发射者： "<<id;
+void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, int id) {
+    //qDebug() <<"【onplayer】发射者： "<<id;
     if (weapon == Player::WeaponType::ball){
         if (vx > 0){
             vx += 500;
@@ -401,7 +428,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else{
             vy -= 500;
         }*/
-        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy), id);
+        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy), initDamage, id);
         entities.push_back(ball);
         balls.push_back(ball);
     }
@@ -412,7 +439,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -2000;
         }
-        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1, id);
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1, initDamage, id);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }
@@ -423,7 +450,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -3000;
         }
-        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2, id);
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2, initDamage, id);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }

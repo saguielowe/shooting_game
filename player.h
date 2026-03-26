@@ -11,6 +11,13 @@ public:
     Player(float x, float y, int id,
            float maxHp, int maxBalls, int maxBullets, int maxSnipers,
            bool canHide, float speedRatio); // id=1 左，id=2 右
+    enum class WeaponType{
+        punch, knife, ball, rifle, sniper
+    };
+    enum class ArmorType{
+        chainmail, vest, noArmor
+    };
+
     void update();  // 每帧更新位置
     void jump();
     void crouch();
@@ -24,6 +31,9 @@ public:
     void modifyvelocity(float ratio){
         velocityratio = ratio;
     }
+    float getAttackDamage() const;
+    float getDefenseMultiplier(WeaponType attackerWeapon) const;
+
 
     bool isShooting = false;
     bool onGround = false;
@@ -52,12 +62,7 @@ public:
     bool  canHide;
     float velocityratio;   // 出厂速度倍率，从 session 读，不变
     float selfvelocityratio = 1.0f;  // 词条/法术修改这个
-    enum class WeaponType{
-        punch, knife, ball, rifle, sniper
-    };
-    enum class ArmorType{
-        chainmail, vest, noArmor
-    };
+
 
     WeaponType weapon = WeaponType::punch;
     ArmorType armor = ArmorType::noArmor;

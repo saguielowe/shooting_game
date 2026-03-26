@@ -9,11 +9,17 @@
 #include <QPushButton>
 #include <QMessageBox>
 
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QRect screenGeometry = screen->geometry();
+    // 让窗口出现在屏幕顶部居中
+    int x = (screenGeometry.width() - this->width()) / 2;
+    int y = 0;  // 顶部
+    this->move(x, 0);
     setWindowTitle("Shooting Game");
-    //setFixedSize(1000, 700);  // 和原来 Widget 保持一致，按需调整
 
     stack = new QStackedWidget(this);
     setCentralWidget(stack);
@@ -161,28 +167,17 @@ void MainWindow::startRound() {
 void MainWindow::showResult() {
     int winner = (session.scoreP1 > session.scoreP2) ? 1 : 2;
 
-    QString msg = QString("玩家%1 获胜！\n\n最终比分：%2 : %3")
-                      .arg(winner)
-                      .arg(session.scoreP1)
-                      .arg(session.scoreP2);
+    QString text = QString("玩家%1 获胜！\n\n最终比分  %2 : %3\n\n按任意键继续")
+                       .arg(winner)
+                       .arg(session.scoreP1)
+                       .arg(session.scoreP2);
 
-    // 用 QMessageBox 简单显示，后续可以换成自定义 ResultWidget
-    QMessageBox box(this);
-    box.setWindowTitle("比赛结束");
-    box.setText(msg);
-    box.setStyleSheet("QMessageBox { background: #1a1a2e; color: white; }");
+    gamePage->showMatchResult(text);
 
-    QPushButton* btnAgain = box.addButton("再来一局", QMessageBox::AcceptRole);
-    QPushButton* btnMenu  = box.addButton("返回菜单", QMessageBox::RejectRole);
-    Q_UNUSED(btnAgain);
-
-    box.exec();
-
-    if (box.clickedButton() == btnMenu) {
+    // 一次性连接，玩家按键后弹出菜单选择
+    connect(gamePage, &Widget::matchResultConfirmed,
+            this, [=]() {
+        // 简单处理：直接回菜单，后续可以加"再来一局"逻辑
         goToMenu();
-    } else {
-        // 再来一局：重置比分，重新开始
-        session.resetScores();
-        startRound();
-    }
+    }, Qt::SingleShotConnection);
 }

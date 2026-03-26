@@ -250,3 +250,36 @@ void Player::weaponControll(QString type){
 bool Player::isDead() const{
     return hp<=0 ;
 }
+
+float Player::getAttackDamage() const {
+    static const QMap<WeaponType, float> base = {
+        {WeaponType::punch,  5.f},
+        {WeaponType::knife,  15.f},
+        {WeaponType::rifle,  1.f},
+        {WeaponType::sniper, 1.f},
+        {WeaponType::ball, 1.f} // 远程攻击的伤害不在此结算，各实体有自己的伤害倍率
+    };
+
+    float dmg = base.value(weapon, 5.f);
+
+    // 护甲对攻击方没有影响，词条接口预留在这里
+    // dmg *= (1.f + modifier.weaponBonus(weapon));  // 武器专属词条
+    // dmg *= modifier.atkMultiplier;                // 通用攻击加成
+    // if (modifier.doubleEdge) dmg *= 2.f;          // 双刃词条
+
+    return dmg;
+}
+
+float Player::getDefenseMultiplier(WeaponType weaponType) const {
+    float multiplier = 1.0f;
+
+    // 护甲系统保持现有逻辑
+    // 原来 combatmanager 里的护甲判断迁移到这里
+    // （你把现有护甲逻辑贴给我，我帮你迁移）
+
+    // 词条接口预留
+    // multiplier *= modifier.defMultiplier;         // 通用减免
+    // if (modifier.doubleEdge) multiplier *= 2.f;   // 双刃词条（受到伤害翻倍）
+
+    return multiplier;
+}

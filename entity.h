@@ -2,6 +2,7 @@
 #define ENTITY_H
 #include<QPainter>
 #include<QRectF>
+#include "player.h"
 
 class Entity
 {
@@ -12,6 +13,7 @@ public:
     virtual float getDamage(int id){return 0;};
     virtual QRect hitbox(){};
     bool getDir(){ return (velocity.x() > 0);}; // 右true，左false，用于撞击方向判断
+    virtual Player::WeaponType getWeaponType(){ return Player::WeaponType::punch; }; // 默认近战攻击，远程攻击需要重载
     QPointF getPos(){ return position; };
     void stop(); // 施加阻力
     void applyGravity(); // 施加重力

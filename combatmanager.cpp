@@ -20,13 +20,13 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
 
         // p1 攻击命中 p2
         if (p1->canAttack()) {
-            int damage = (p1->getWeaponType() == Player::WeaponType::knife) ? 15 : 5;
-            p2->receiveHit(damage, dirToP1);
+            float dmg = p1->getAttackDamage() * p2->getDefenseMultiplier(p1->getWeaponType()); // 考虑 p2 的防御加成 和 p1 的攻击加成
+            p2->receiveHit(dmg, p1->getWeaponType(), dirToP1);
         }
         // p2 攻击命中 p1
         if (p2->canAttack()) {
-            int damage = (p2->getWeaponType() == Player::WeaponType::knife) ? 15 : 5;
-            p1->receiveHit(damage, dirToP2);
+            float dmg = p2->getAttackDamage() * p1->getDefenseMultiplier(p2->getWeaponType());
+            p1->receiveHit(dmg, p2->getWeaponType(), dirToP2);
         }
     }
 }
@@ -36,6 +36,8 @@ void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p)
         bool p1LeftOfP2 = e->getDir();
         QString dirToP2 = p1LeftOfP2 ? "left" : "right"; // 被撞后应该往哪飞
         e->onCollideWithPlayer(); // 多态自动决定子类行为
-        p->receiveHit(e->getDamage(p->getId()), dirToP2);
+        float dmg = e->getDamage(p->getId());
+        qDebug()<<"first cal:"<<dmg;
+        p->receiveHit(dmg * p->getDefenseMultiplier(e->getWeaponType()), e->getWeaponType(), dirToP2); // 远程攻击考虑防御加成
     }
 }

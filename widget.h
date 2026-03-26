@@ -30,6 +30,7 @@ class Widget : public QWidget
 public:
     Widget(const GameSession& session, QWidget *parent = nullptr);
     void resetGame(const GameSession& session);
+    void showMatchResult(const QString& text);
     void updateDrops(float dt);
     void updateBalls(float dt);
     void drawDrops(QPainter& painter);
@@ -43,10 +44,11 @@ protected:
 
 private slots:
     void gameLoop();
-    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id);
+    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, int id);
 signals:
     void keyPressed();
     void roundEnded(int winnerId);  // 一局结束，传赢家 id
+    void matchResultConfirmed(); // 整场结束，玩家确认结果，准备返回菜单
 private:
     void applySession(const GameSession& session);
     void initGame(); // 读取game session信息后，给玩家赋初值。
