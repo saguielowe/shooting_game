@@ -44,6 +44,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         mainwindow.h mainwindow.cpp
         setupwidget.cpp setupwidget.h
         gamesession.h
+        modifierdata.h modifieroverlay.cpp modifieroverlay.h
     )
 else()
     if(ANDROID)

@@ -5,7 +5,29 @@
 #include <QLabel>
 #include "./ui_widget.h"
 #include <QScreen>
+static QString spellEnumToString(GameSession::Spell spell) {
+    switch (spell) {
+    case GameSession::Spell::FREEZE:    return "freeze";
+    case GameSession::Spell::STEALTH:   return "stealth";
+    case GameSession::Spell::BARRIER:   return "barrier";
+    case GameSession::Spell::IRON_BODY: return "iron_body";
+    case GameSession::Spell::CLONE:     return "clone";
+    case GameSession::Spell::FORBIDDEN: return "forbidden";
+    default:                     return "";
+    }
+}
 
+// 检查玩家是否已拥有某唯一词条
+static bool playerHasUniqueModifier(const std::shared_ptr<Player>& p, ModifierType t) {
+    switch (t) {
+    case ModifierType::DOUBLE_EDGE:         return p->modifiers.doubleEdge;
+    case ModifierType::FREEZE_BREAK_CDR:    return p->modifiers.freezeBreakCDR;
+    case ModifierType::CLONE_CAN_CAST_SPELL:return p->modifiers.cloneCanCastSpell;
+    case ModifierType::CLONE_DAMAGE_EXTEND: return p->modifiers.cloneDamageExtend;
+    case ModifierType::FORBIDDEN_WORD:      return p->modifiers.forbiddenWord;
+    default: return false;
+    }
+}
 Widget::Widget(const GameSession& session, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget) // 初始化已定义但未赋值的变量，大括号内是要做的操作
@@ -27,6 +49,9 @@ Widget::Widget(const GameSession& session, QWidget *parent)
 
     qDebug() <<"scene loaded";
 
+    modifierOverlay = new ModifierOverlay(this);
+    connect(modifierOverlay, &ModifierOverlay::optionChosen,
+            this, &Widget::onModifierChosen);
     ui->setupUi(this);
 }
 
@@ -298,7 +323,7 @@ void Widget::spawnDrop() {
     int categoryRoll = QRandomGenerator::global()->bounded(100); // [0, 99]
     QString itemName;
 
-    if (categoryRoll < 50) { // 武器 50%
+    if (categoryRoll < 40) { // 武器 40%
         int weaponRoll = QRandomGenerator::global()->bounded(100);
         if (weaponRoll < 10) {
             itemName = "knife"; // 小刀 40%
@@ -309,14 +334,17 @@ void Widget::spawnDrop() {
         } else {
             itemName = "sniper"; // 狙击枪 10%
         }
-    } else if (categoryRoll < 70) { // 护甲 20%
+    } else if (categoryRoll < 60) { // 护甲 20%
         int armorRoll = QRandomGenerator::global()->bounded(100);
         if (armorRoll < 50) {
             itemName = "chainmail"; // 锁子甲 50%
         } else {
             itemName = "vest"; // 防弹衣 50%
         }
-    } else { // 药品 30%
+    } else if (categoryRoll < 90) { // 词条 30%
+        itemName = "modifier";
+    }
+    else { // 药品 10%
         int medicineRoll = QRandomGenerator::global()->bounded(100);
         if (medicineRoll < 50) {
             itemName = "bandage"; // 绷带 50%
@@ -340,10 +368,19 @@ void Widget::updateDrops(float dt){
         }
         if (drop.lock()->isCollectedBy(players[0].get()) && intent[0].moveIntent == MoveIntent::CROUCH) {
             drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            if (drop.lock()->itemType == "modifier"){
+                qDebug()<<"modifier collected!";
+                triggerModifierChoice(0);
+                break;
+            }
             players[0]->weaponControll(drop.lock()->itemType);
         }
         else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == MoveIntent::CROUCH) {
             drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            if (drop.lock()->itemType == "modifier" && currentSession.mode == GameSession::Mode::PVP){
+                triggerModifierChoice(1); // ai捡不了词条
+                break;
+            }
             players[1]->weaponControll(drop.lock()->itemType);
         }
         drop.lock()->setDt(dt);
@@ -491,5 +528,66 @@ void Widget::updateAIInfo()
     else if (wp == Player::WeaponType::sniper){
         ai->setCurrentWeapon("sniper");
     }
+}
 
+// DropItem 被捡起时调用（在 updateDrops 里判断 itemType == "modifier"）
+void Widget::triggerModifierChoice(int playerIndex) {
+    // 暂停游戏
+    timer->stop();
+
+    // 获取该玩家的法术名（GameSession里存着）
+    QString spellName = (playerIndex == 0)
+                            ? spellEnumToString(currentSession.spellP1)
+                            : spellEnumToString(currentSession.spellP2);
+
+    // 从词条池随机抽3张（去掉已是唯一且已拥有的）
+    QVector<ModifierData> pool = ModifierData::poolForPlayer(spellName);
+    auto& p = players[playerIndex];
+
+    // 过滤：唯一词条已有的不再出现
+    pool.erase(std::remove_if(pool.begin(), pool.end(),
+                              [&](const ModifierData& m) {
+                                  if (!isUniqueModifier(m.type)) return false;
+                                  // 检查 player 是否已拥有此唯一词条
+                                  return playerHasUniqueModifier(p, m.type);
+                              }), pool.end());
+
+    if (pool.size() < 3) {
+        // 词条池不足3张（极端情况），直接恢复游戏
+        timer->start();
+        return;
+    }
+
+    // 随机不重复抽3张
+    QVector<ModifierData> options;
+    QVector<int> indices;
+    while (indices.size() < 3) {
+        int idx = QRandomGenerator::global()->bounded(pool.size());
+        if (!indices.contains(idx)) {
+            indices.append(idx);
+            options.append(pool[idx]);
+        }
+    }
+
+    pendingModifierPlayer = playerIndex;
+    modifierOverlay->showOptions(playerIndex, options);
+}
+
+void Widget::onModifierChosen(const ModifierData& chosen) {
+    if (pendingModifierPlayer < 0) return;
+
+    auto& myPlayer  = players[pendingModifierPlayer];
+    auto& oppPlayer = players[1 - pendingModifierPlayer];
+
+    // 对手词条：作用在对手身上
+    if (chosen.type == ModifierType::ENEMY_MAX_HP_DOWN ||
+        chosen.type == ModifierType::ENEMY_MOVE_SPEED_DOWN) {
+        oppPlayer->applyEnemyModifier(chosen);
+    } else {
+        myPlayer->applyModifier(chosen);
+    }
+
+    pendingModifierPlayer = -1;
+    lastTime.restart(); // 重置计时器，避免因暂停导致的dt过大
+    timer->start();  // 恢复游戏
 }

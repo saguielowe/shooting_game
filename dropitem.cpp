@@ -11,6 +11,7 @@ DropItem::DropItem(float startX, const QString type)
     velocity = QPointF(0, 0);
 
     QString path = ":/items/assets/items/" + type + ".png";
+    qDebug()<<path;
     pixmap = QPixmap(path).scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
 

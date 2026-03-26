@@ -251,35 +251,162 @@ bool Player::isDead() const{
     return hp<=0 ;
 }
 
-float Player::getAttackDamage() const {
-    static const QMap<WeaponType, float> base = {
-        {WeaponType::punch,  5.f},
-        {WeaponType::knife,  15.f},
-        {WeaponType::rifle,  1.f},
-        {WeaponType::sniper, 1.f},
-        {WeaponType::ball, 1.f} // 远程攻击的伤害不在此结算，各实体有自己的伤害倍率
-    };
+void Player::applyModifier(const ModifierData& mod) {
+    switch (mod.type) {
 
-    float dmg = base.value(weapon, 5.f);
+    // ── 通用词条 ──────────────────────────────────────────
+    case ModifierType::SPELL_COOLDOWN_REDUCE:
+        modifiers.spellCooldownReduce += 5;
+        break;
 
-    // 护甲对攻击方没有影响，词条接口预留在这里
-    // dmg *= (1.f + modifier.weaponBonus(weapon));  // 武器专属词条
-    // dmg *= modifier.atkMultiplier;                // 通用攻击加成
-    // if (modifier.doubleEdge) dmg *= 2.f;          // 双刃词条
+    case ModifierType::MAX_HP_UP:
+        modifiers.maxHpMultiplier += 0.2f;
+        maxHp = maxHp * modifiers.maxHpMultiplier;
+        hp *= modifiers.maxHpMultiplier; // 血条上限与现有血量同步增加
+        break;
 
-    return dmg;
+    case ModifierType::MOVE_SPEED_UP:
+        modifiers.moveSpeedMultiplier += 0.15f;
+        selfvelocityratio = velocityratio * modifiers.moveSpeedMultiplier;
+        break;
+
+    case ModifierType::PUNCH_DAMAGE_UP:
+        modifiers.punchDmgMultiplier += 1.0f; // +100%
+        break;
+
+    case ModifierType::KNIFE_DAMAGE_UP:
+        modifiers.knifeDmgMultiplier += 0.5f;
+        break;
+
+    case ModifierType::BALL_DAMAGE_UP:
+        modifiers.ballDmgMultiplier += 0.3f;
+        break;
+
+    case ModifierType::GUN_DAMAGE_UP:
+        modifiers.gunDmgMultiplier += 0.3f;
+        break;
+
+    case ModifierType::DAMAGE_BONUS_UP:
+        modifiers.damageBonusMultiplier += 0.2f;
+        break;
+
+    case ModifierType::DAMAGE_REDUCTION_UP:
+        modifiers.damageReduction = qMin(1.0f, modifiers.damageReduction + 0.2f);
+        break;
+
+    case ModifierType::DOUBLE_EDGE:
+        modifiers.doubleEdge = true;
+        break;
+
+    case ModifierType::EXTRA_WEAPON_SLOT:
+        modifiers.extraWeaponSlots++;
+        break;
+
+    // ── 定身词条 ──────────────────────────────────────────
+    case ModifierType::FREEZE_DURATION_UP:
+        modifiers.freezeDurationBonus += 2.f;
+        break;
+    case ModifierType::FREEZE_DAMAGE_UP:
+        modifiers.freezeDmgMultiplier += 0.2f;
+        break;
+    case ModifierType::FREEZE_STUN_UP:
+        modifiers.freezeStunBonus += 0.5f;
+        break;
+    case ModifierType::FREEZE_BREAK_CDR:
+        modifiers.freezeBreakCDR = true;
+        break;
+
+    // ── 隐身词条 ──────────────────────────────────────────
+    case ModifierType::STEALTH_DURATION_UP:
+        modifiers.stealthDurationBonus += 2.f;
+        break;
+    case ModifierType::STEALTH_SPEED_UP:
+        modifiers.stealthSpeedMultiplier += 0.2f;
+        break;
+    case ModifierType::STEALTH_DAMAGE_REDUCTION:
+        modifiers.stealthDmgReduction = qMin(1.0f, modifiers.stealthDmgReduction + 0.2f);
+        break;
+    case ModifierType::STEALTH_DAMAGE_UP:
+        modifiers.stealthDmgMultiplier += 0.2f;
+        break;
+    case ModifierType::STEALTH_REGEN:
+        modifiers.stealthRegenPerSec += 1.f;
+        break;
+
+    // ── 安身词条 ──────────────────────────────────────────
+    case ModifierType::BARRIER_DURATION_UP:
+        modifiers.barrierDurationBonus += 5.f;
+        break;
+    case ModifierType::BARRIER_REGEN_UP:
+        modifiers.barrierRegenPerSec += 2.f;
+        break;
+    case ModifierType::BARRIER_REDUCTION_UP:
+        modifiers.barrierDmgReduction = qMin(1.0f, modifiers.barrierDmgReduction + 0.2f);
+        break;
+
+    // ── 身外身词条 ────────────────────────────────────────
+    case ModifierType::CLONE_CAN_CAST_SPELL:
+        modifiers.cloneCanCastSpell = true;
+        break;
+    case ModifierType::CLONE_DAMAGE_UP:
+        modifiers.cloneDmgMultiplier += 0.2f;
+        break;
+    case ModifierType::CLONE_DURATION_UP:
+        modifiers.cloneDurationBonus += 5.f;
+        break;
+    case ModifierType::CLONE_DAMAGE_EXTEND:
+        modifiers.cloneDamageExtend = true;
+        break;
+
+    // ── 禁字法 ────────────────────────────────────────────
+    case ModifierType::FORBIDDEN_WORD:
+        modifiers.forbiddenWord = true;
+        modifiers.damageBonusMultiplier += 1.0f; // +100%
+        break;
+
+    default:
+        break;
+    }
 }
 
+void Player::applyEnemyModifier(const ModifierData& mod) {
+    // 对手词条：减少我的属性
+    switch (mod.type) {
+    case ModifierType::ENEMY_MAX_HP_DOWN:
+        modifiers.maxHpMultiplier = qMax(0.2f, modifiers.maxHpMultiplier - 0.2f);
+        maxHp = maxHp * modifiers.maxHpMultiplier;
+        hp *= modifiers.maxHpMultiplier;
+        break;
+    case ModifierType::ENEMY_MOVE_SPEED_DOWN:
+        modifiers.moveSpeedMultiplier = qMax(0.3f, modifiers.moveSpeedMultiplier - 0.15f);
+        selfvelocityratio = velocityratio * modifiers.moveSpeedMultiplier;
+        break;
+    default:
+        break;
+    }
+}
+
+// ── getAttackDamage() 修改版 ─────────────────────────────────
+float Player::getAttackDamage() const {
+    float base = 0.f;
+    switch (weapon) {
+    case WeaponType::punch:  base = 5.f * modifiers.punchDmgMultiplier; break;
+    case WeaponType::knife:  base = 15.f * modifiers.knifeDmgMultiplier; break;
+    case WeaponType::ball:   base = 1.f * modifiers.ballDmgMultiplier;  break;
+    case WeaponType::rifle:  base = 1.f * modifiers.gunDmgMultiplier;   break;
+    case WeaponType::sniper: base = 1.f * modifiers.gunDmgMultiplier;   break;
+    }
+    base *= modifiers.damageBonusMultiplier;
+    if (modifiers.doubleEdge) base *= 2.f;
+    // 法术加成由各法术在激活时额外乘，这里不处理
+    return base;
+}
+
+// ── getDefenseMultiplier() 修改版 ────────────────────────────
 float Player::getDefenseMultiplier(WeaponType weaponType) const {
-    float multiplier = 1.0f;
 
-    // 护甲系统保持现有逻辑
-    // 原来 combatmanager 里的护甲判断迁移到这里
-    // （你把现有护甲逻辑贴给我，我帮你迁移）
-
-    // 词条接口预留
-    // multiplier *= modifier.defMultiplier;         // 通用减免
-    // if (modifier.doubleEdge) multiplier *= 2.f;   // 双刃词条（受到伤害翻倍）
-
+    float totalReduction = qMin(1.0f, modifiers.damageReduction);
+    float multiplier = 1.0f - totalReduction;
+    if (modifiers.doubleEdge) multiplier *= 2.f;
     return multiplier;
 }

@@ -4,6 +4,7 @@
 #include<QRectF>
 #include "animation.h"
 #include "map.h"
+#include "modifierdata.h"
 
 class Player
 {
@@ -69,6 +70,51 @@ public:
     int vestHardness = 100;
 
     void draw(QPainter& painter); // 可以隐藏的场景如草地
+    struct ModifierState {
+        int   spellCooldownReduce   = 0;    // 累计减少法术冷却秒数
+        float maxHpMultiplier       = 1.0f; // 血量上限倍率
+        float moveSpeedMultiplier   = 1.0f; // 移动速度倍率
+        float punchDmgMultiplier    = 1.0f;
+        float knifeDmgMultiplier    = 1.0f;
+        float ballDmgMultiplier     = 1.0f;
+        float gunDmgMultiplier      = 1.0f;
+        float damageBonusMultiplier = 1.0f; // 通用伤害加成
+        float damageReduction       = 0.0f; // 0~1，上限 1.0
+        bool  doubleEdge            = false;
+        int   extraWeaponSlots      = 0;
+
+        // 法术专属（各法术实现时读取）
+        float freezeDurationBonus   = 0.f;
+        float freezeDmgMultiplier   = 1.0f;
+        float freezeStunBonus       = 0.f;
+        bool  freezeBreakCDR        = false;
+
+        float stealthDurationBonus  = 0.f;
+        float stealthSpeedMultiplier= 1.0f;
+        float stealthDmgReduction   = 0.0f; // 上限 1.0
+        float stealthDmgMultiplier  = 1.0f;
+        float stealthRegenPerSec    = 0.f;
+
+        float barrierDurationBonus  = 0.f;
+        float barrierRegenPerSec    = 1.0f; // 基础1点/秒
+        float barrierDmgReduction   = 0.2f; // 基础20%
+
+        bool  cloneCanCastSpell     = false;
+        float cloneDmgMultiplier    = 1.0f;
+        float cloneDurationBonus    = 0.f;
+        bool  cloneDamageExtend     = false;
+
+        bool  forbiddenWord         = false; // 禁字法
+    };
+    ModifierState modifiers;
+
+    // 用于对手词条（ENEMY_MAX_HP_DOWN / ENEMY_MOVE_SPEED_DOWN）
+    // Widget 层在 optionChosen 回调里拿到 ModifierData，
+    // 判断是 ENEMY_* 类型后调用 opponent->applyEnemyModifier()
+    void applyEnemyModifier(const ModifierData& mod);
+
+    // ── player.h 修改后的接口 ───────────────────────────────────
+    void  applyModifier(const ModifierData& mod);
 
     /* mode=0 正常模式
      * mode=1 投掷模式：实心球可投掷数量翻倍
@@ -85,6 +131,9 @@ private:
     const float resistance = 20.0f; // 不按按键时，左右移动速度的衰减
     const float airResistance = 30.0f; // 不按按键时，空中左右移动速度的衰减
     const float acceleration = 30.0f; // 左右移动时，速度的增加
+
+
+
 
 };
 

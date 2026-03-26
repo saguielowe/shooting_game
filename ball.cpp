@@ -65,7 +65,7 @@ float Ball::getDamage(int id){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
     //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
-    return basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y()) / 100;
+    return basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y()) / 10000;
     // 这里只计算削减前的伤害，削减在combat manager里根据玩家状态进行
 }
 

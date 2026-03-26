@@ -57,6 +57,7 @@
         <file>assets/items/bullet.png</file>
         <file>assets/items/chainmail.png</file>
         <file>assets/items/vest.png</file>
+        <file>assets/items/modifier.png</file>
     </qresource>
     <qresource prefix="/sounds">
         <file>assets/sounds/crash.wav</file>

@@ -16,6 +16,7 @@
 #include "bullet.h"
 #include <QRandomGenerator>
 #include "gameai.h"
+#include "modifieroverlay.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -57,8 +58,12 @@ private:
     void updateAIInfo();
     void gameEnd(int id);
     void updateIntents();
+    void triggerModifierChoice(int player);
+    void onModifierChosen(const ModifierData& chosen);
 
     GameSession currentSession;
+    ModifierOverlay* modifierOverlay;   // 构造时 new 一次
+    int pendingModifierPlayer = -1;
     struct inputIntent {
         MoveIntent moveIntent;
         bool attackIntent;
