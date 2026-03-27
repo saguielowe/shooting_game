@@ -60,6 +60,8 @@ private:
     void updateIntents();
     void triggerModifierChoice(int player);
     void onModifierChosen(const ModifierData& chosen);
+    void tryActivateSpell(int playerIndex);
+    void tickSpells(float dt);
 
     GameSession currentSession;
     ModifierOverlay* modifierOverlay;   // 构造时 new 一次

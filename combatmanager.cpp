@@ -1,7 +1,16 @@
 #include "combatmanager.h"
 #include "entity.h"
 #include <QDebug>
-
+static QString weaponName(Player::WeaponType w) {
+    switch (w) {
+    case Player::WeaponType::punch:  return "拳击";
+    case Player::WeaponType::knife:  return "小刀";
+    case Player::WeaponType::ball:   return "实心球";
+    case Player::WeaponType::rifle:  return "步枪";
+    case Player::WeaponType::sniper: return "狙击枪";
+    }
+    return "未知";
+}
 CombatManager::CombatManager() {}
 
 void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerController *p2)
@@ -20,24 +29,61 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
 
         // p1 攻击命中 p2
         if (p1->canAttack()) {
-            float dmg = p1->getAttackDamage() * p2->getDefenseMultiplier(p1->getWeaponType()); // 考虑 p2 的防御加成 和 p1 的攻击加成
-            p2->receiveHit(dmg, p1->getWeaponType(), dirToP1);
+            float baseDmg = p1->getAttackDamage();
+            if (p2->isFrozen())  // PlayerController新增，见下
+                baseDmg *= p1->getFreezeDmgMultiplier();  // 见下
+            float defMult  = p2->getDefenseMultiplier(p1->getWeaponType());
+            float finalDmg = baseDmg * defMult;
+
+            qDebug().noquote() << QString("[伤害] P%1(%2) → P%3 | 基础:%4 | 防御x%5 | 最终:%6")
+                                      .arg(p1->getId() + 1)
+                                      .arg(weaponName(p1->getWeaponType()))
+                                      .arg(p2->getId() + 1)
+                                      .arg(baseDmg,   0, 'f', 1)
+                                      .arg(defMult,   0, 'f', 2)
+                                      .arg(finalDmg,  0, 'f', 1);
+
+            p2->receiveHit(finalDmg, p1->getWeaponType(), dirToP1);
         }
+
         // p2 攻击命中 p1
         if (p2->canAttack()) {
-            float dmg = p2->getAttackDamage() * p1->getDefenseMultiplier(p2->getWeaponType());
-            p1->receiveHit(dmg, p2->getWeaponType(), dirToP2);
+            float baseDmg  = p2->getAttackDamage();
+            float defMult  = p1->getDefenseMultiplier(p2->getWeaponType());
+            float finalDmg = baseDmg * defMult;
+
+            qDebug().noquote() << QString("[伤害] P%1(%2) → P%3 | 基础:%4 | 防御x%5 | 最终:%6")
+                                      .arg(p2->getId() + 1)
+                                      .arg(weaponName(p2->getWeaponType()))
+                                      .arg(p1->getId() + 1)
+                                      .arg(baseDmg,   0, 'f', 1)
+                                      .arg(defMult,   0, 'f', 2)
+                                      .arg(finalDmg,  0, 'f', 1);
+
+            p1->receiveHit(finalDmg, p2->getWeaponType(), dirToP2);
         }
     }
 }
 
-void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p){
+void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p) {
     if (e->hitbox().intersects(p->getHitbox())) {
-        bool p1LeftOfP2 = e->getDir();
-        QString dirToP2 = p1LeftOfP2 ? "left" : "right"; // 被撞后应该往哪飞
-        e->onCollideWithPlayer(); // 多态自动决定子类行为
-        float dmg = e->getDamage(p->getId());
-        qDebug()<<"first cal:"<<dmg;
-        p->receiveHit(dmg * p->getDefenseMultiplier(e->getWeaponType()), e->getWeaponType(), dirToP2); // 远程攻击考虑防御加成
+        bool leftOfP = e->getDir();
+        QString dir  = leftOfP ? "left" : "right";
+
+        e->onCollideWithPlayer();
+
+        float rawDmg   = e->getDamage(p->getId());
+        float defMult  = p->getDefenseMultiplier(e->getWeaponType());
+        float finalDmg = rawDmg * defMult;
+
+        qDebug().noquote() << QString("[伤害] %1 → P%2 | 来源:%3 | 原始:%4 | 防御x%5 | 最终:%6")
+                                  .arg(weaponName(e->getWeaponType()))
+                                  .arg(p->getId() + 1)
+                                  .arg(weaponName(e->getWeaponType()))
+                                  .arg(rawDmg,   0, 'f', 1)
+                                  .arg(defMult,  0, 'f', 2)
+                                  .arg(finalDmg, 0, 'f', 1);
+
+        p->receiveHit(finalDmg, e->getWeaponType(), dir);
     }
 }

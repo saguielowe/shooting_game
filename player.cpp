@@ -15,7 +15,8 @@ Player::Player(float x, float y, int id,
     , velocityratio(initSpeedRatio)
     , selfvelocityratio(1.0f)
     , ballCount(0)
-    , bulletCount(0)
+    , rifleCount(0)
+    , sniperCount(0)
     , hpRegenerate(false)
     , regenerateTime(0)
     , direction(1)
@@ -212,41 +213,7 @@ void Player::draw(QPainter& painter) { // 传窗口painter的引用
     }
 }
 
-void Player::weaponControll(QString type){
-    if (type == "knife"){
-        weapon = WeaponType::knife;
-    }
-    else if (type == "ball"){
-        weapon = WeaponType::ball;
-        ballCount = maxBalls;
-    }
-    else if (type == "bandage"){
-        hp = fmin(hp + 30, maxHp);
-    }
-    else if (type == "rifle"){
-        weapon = WeaponType::rifle;
-        bulletCount = maxBullets;
-    }
-    else if (type == "medkit"){
-        hp = maxHp;
-    }
-    else if (type == "sniper"){
-        weapon = WeaponType::sniper;
-        bulletCount = maxSnipers;
-    }
-    else if (type == "adrenaline"){
-        selfvelocityratio = 1.2;
-        hpRegenerate = true;
-        regenerateTime = 20;
-    }
-    else if (type == "chainmail"){
-        armor = ArmorType::chainmail;
-    }
-    else if (type == "vest"){
-        armor = ArmorType::vest;
-        vestHardness = 100;
-    }
-}
+
 
 bool Player::isDead() const{
     return hp<=0 ;
@@ -301,6 +268,7 @@ void Player::applyModifier(const ModifierData& mod) {
 
     case ModifierType::EXTRA_WEAPON_SLOT:
         modifiers.extraWeaponSlots++;
+        updateSlots(); // 直接更新槽位，给予新武器
         break;
 
     // ── 定身词条 ──────────────────────────────────────────
@@ -417,7 +385,42 @@ void Player::switchWeaponSlot() {
     activeSlotIndex = (activeSlotIndex + 1) % weaponSlots.size();
     weapon = weaponSlots[activeSlotIndex];
 }
- 
+
+void Player::weaponControll(QString type){
+    if (type == "knife"){
+        pickupWeapon(WeaponType::knife);
+    }
+    else if (type == "ball"){
+        ballCount = maxBalls;
+        pickupWeapon(WeaponType::ball);
+    }
+    else if (type == "bandage"){
+        hp = fmin(hp + 30, maxHp);
+    }
+    else if (type == "rifle"){
+        pickupWeapon(WeaponType::rifle);
+        rifleCount = maxBullets;
+    }
+    else if (type == "medkit"){
+        hp = maxHp;
+    }
+    else if (type == "sniper"){
+        pickupWeapon(WeaponType::sniper);
+        sniperCount = maxSnipers;
+    }
+    else if (type == "adrenaline"){
+        selfvelocityratio = 1.2;
+        hpRegenerate = true;
+        regenerateTime = 20;
+    }
+    else if (type == "chainmail"){
+        armor = ArmorType::chainmail;
+    }
+    else if (type == "vest"){
+        armor = ArmorType::vest;
+        vestHardness = 100;
+    }
+}
 bool Player::pickupWeapon(WeaponType w) {
     // 已有此武器，不重复捡
     if (weaponSlots.contains(w)) return false;
@@ -434,37 +437,111 @@ bool Player::pickupWeapon(WeaponType w) {
     weapon = w;
     return true;
 }
- 
+
+void Player::updateSlots(){
+    if (maxWeaponSlots() >= 2){
+        if (!weaponSlots.contains(WeaponType::punch)){
+            weaponSlots.append(WeaponType::punch); // 有多槽，给予保底攻击手段
+        }
+    }
+    if (ballCount <= 0 && weaponSlots.contains(WeaponType::ball)){
+        weaponSlots.removeAll(WeaponType::ball);
+        if (weaponSlots.size() == 0) weaponSlots.append(Player::WeaponType::punch); // 先填补一个攻击手段回去
+        activeSlotIndex = fmax(activeSlotIndex - 1, 0);
+        weapon = weaponSlots[activeSlotIndex]; // 切换到剩余槽位的武器
+    }
+    if (rifleCount <= 0 && weaponSlots.contains(WeaponType::rifle)){
+        weaponSlots.removeAll(WeaponType::rifle);
+        if (weaponSlots.size() == 0) weaponSlots.append(Player::WeaponType::punch);
+        activeSlotIndex = fmax(activeSlotIndex - 1, 0);
+        weapon = weaponSlots[activeSlotIndex];
+    }
+    if (sniperCount <= 0 && weaponSlots.contains(WeaponType::sniper)){
+        weaponSlots.removeAll(WeaponType::sniper);
+        if (weaponSlots.size() == 0) weaponSlots.append(Player::WeaponType::punch);
+        activeSlotIndex = fmax(activeSlotIndex - 1, 0);
+        weapon = weaponSlots[activeSlotIndex];
+    }
+}
 // ── 词条摘要 ─────────────────────────────────────────────────
- 
+
 QStringList Player::getModifierSummary() const {
     QStringList lines;
     const auto& m = modifiers;
- 
+
+    // ── 速度/血量 ─────────────────────────────────────────
     if (m.moveSpeedMultiplier != 1.f)
-        lines << QString("速度 %1%").arg(int((m.moveSpeedMultiplier - 1.f) * 100));
+        lines << QString("速度 +%1%").arg(int((m.moveSpeedMultiplier - 1.f) * 100));
+    if (m.maxHpMultiplier != 1.f)
+        lines << QString("血上限 %1%").arg(int(m.maxHpMultiplier * 100));
+
+    // ── 伤害/减伤 ─────────────────────────────────────────
     if (m.damageBonusMultiplier != 1.f)
         lines << QString("伤害 +%1%").arg(int((m.damageBonusMultiplier - 1.f) * 100));
     if (m.damageReduction != 0.f)
         lines << QString("减伤 %1%").arg(int(m.damageReduction * 100));
-    if (m.maxHpMultiplier != 1.f)
-        lines << QString("血上限 %1%").arg(int(m.maxHpMultiplier * 100));
+
+    // ── 武器伤害 ──────────────────────────────────────────
     if (m.punchDmgMultiplier != 1.f)
-        lines << QString("拳 x%.1f").arg(m.punchDmgMultiplier);
+        lines << QString("拳 +%1%").arg(int((m.punchDmgMultiplier  - 1.f) * 100));
     if (m.knifeDmgMultiplier != 1.f)
-        lines << QString("刀 x%.1f").arg(m.knifeDmgMultiplier);
+        lines << QString("刀 +%1%").arg(int((m.knifeDmgMultiplier  - 1.f) * 100));
     if (m.ballDmgMultiplier != 1.f)
-        lines << QString("球 x%.1f").arg(m.ballDmgMultiplier);
+        lines << QString("球 +%1%").arg(int((m.ballDmgMultiplier   - 1.f) * 100));
     if (m.gunDmgMultiplier != 1.f)
-        lines << QString("枪 x%.1f").arg(m.gunDmgMultiplier);
+        lines << QString("枪 +%1%").arg(int((m.gunDmgMultiplier    - 1.f) * 100));
+
+    // ── 特殊词条 ──────────────────────────────────────────
     if (m.doubleEdge)
         lines << "两败俱伤";
     if (m.extraWeaponSlots > 0)
         lines << QString("武器槽 +%1").arg(m.extraWeaponSlots);
-    if (m.freezeDurationBonus > 0)
-        lines << QString("定身 +%1s").arg(int(m.freezeDurationBonus));
-    if (m.stealthDurationBonus > 0)
-        lines << QString("隐身 +%1s").arg(int(m.stealthDurationBonus));
- 
+    if (m.spellCooldownReduce > 0)
+        lines << QString("法术CD -%1s").arg(m.spellCooldownReduce);
+
+    // ── 定身词条 ──────────────────────────────────────────
+    if (m.freezeDurationBonus > 0.f)
+        lines << QString("定身时长 +%1s").arg(int(m.freezeDurationBonus));
+    if (m.freezeDmgMultiplier != 1.f)
+        lines << QString("定身伤害 +%1%").arg(int((m.freezeDmgMultiplier - 1.f) * 100));
+    if (m.freezeStunBonus > 0.f)
+        lines << QString("破定硬直 +%.1fs").arg(m.freezeStunBonus);
+    if (m.freezeBreakCDR)
+        lines << "破定减CD";
+
+    // ── 隐身词条 ──────────────────────────────────────────
+    if (m.stealthDurationBonus > 0.f)
+        lines << QString("隐身时长 +%1s").arg(int(m.stealthDurationBonus));
+    if (m.stealthSpeedMultiplier != 1.f)
+        lines << QString("隐身速度 +%1%").arg(int((m.stealthSpeedMultiplier - 1.f) * 100));
+    if (m.stealthDmgReduction > 0.f)
+        lines << QString("隐身减伤 %1%").arg(int(m.stealthDmgReduction * 100));
+    if (m.stealthDmgMultiplier != 1.f)
+        lines << QString("隐身伤害 +%1%").arg(int((m.stealthDmgMultiplier - 1.f) * 100));
+    if (m.stealthRegenPerSec > 0.f)
+        lines << QString("隐身回血 %1/s").arg(int(m.stealthRegenPerSec));
+
+    // ── 安身词条 ──────────────────────────────────────────
+    if (m.barrierDurationBonus > 0.f)
+        lines << QString("屏障时长 +%1s").arg(int(m.barrierDurationBonus));
+    if (m.barrierRegenPerSec != 1.f)
+        lines << QString("屏障回血 %1/s").arg(int(m.barrierRegenPerSec));
+    if (m.barrierDmgReduction != 0.2f)
+        lines << QString("屏障减伤 %1%").arg(int(m.barrierDmgReduction * 100));
+
+    // ── 克隆词条 ──────────────────────────────────────────
+    if (m.cloneCanCastSpell)
+        lines << "分身施法";
+    if (m.cloneDmgMultiplier != 1.f)
+        lines << QString("分身伤害 +%1%").arg(int((m.cloneDmgMultiplier - 1.f) * 100));
+    if (m.cloneDurationBonus > 0.f)
+        lines << QString("分身时长 +%1s").arg(int(m.cloneDurationBonus));
+    if (m.cloneDamageExtend)
+        lines << "以伤续命";
+
+    // ── 禁字法 ────────────────────────────────────────────
+    if (m.forbiddenWord)
+        lines << "禁字法";
+
     return lines;
 }

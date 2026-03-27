@@ -63,6 +63,21 @@ Widget::Widget(const GameSession& session, QWidget *parent)
     modifierOverlay = new ModifierOverlay(this);
     connect(modifierOverlay, &ModifierOverlay::optionChosen,
             this, &Widget::onModifierChosen);
+    for (int i = 0; i < controllers.size(); ++i) {
+        connect(controllers[i].get(), &PlayerController::frozenBroken,
+                this, [this](int victimId) {
+                    // 施法方是对手
+                    int casterIdx = 1 - victimId;
+                    if (casterIdx < players.size()) {
+                        auto& caster = players[casterIdx];
+                        // 词条：定身破碎后减少冷却
+                        if (caster->modifiers.freezeBreakCDR) {
+                            caster->spellState.cooldownRemain =
+                                qMax(0.f, caster->spellState.cooldownRemain - 5.f);
+                        }
+                    }
+                });
+    }
     ui->setupUi(this);
 }
  
@@ -368,6 +383,14 @@ void Widget::updateIntents() {
     else if (pressedKeys.contains(Qt::Key_D)) intent[0].moveIntent = MoveIntent::MOVING_RIGHT;
     else intent[0].moveIntent = MoveIntent::NONE;
     intent[0].attackIntent = pressedKeys.contains(Qt::Key_E);
+    if (pressedKeys.contains(Qt::Key_C)){
+        auto& p = players[0];
+        p->activeSlotIndex = (p->activeSlotIndex + 1) % p->weaponSlots.size(); // 切换武器槽
+        p->weapon = p->weaponSlots[p->activeSlotIndex]; // 切换武器
+    }
+    if (pressedKeys.contains(Qt::Key_Q))
+        tryActivateSpell(0);
+
     // P2同理
     if (pressedKeys.contains(Qt::Key_I)) intent[1].moveIntent = MoveIntent::JUMP;
     else if (pressedKeys.contains(Qt::Key_K)) { // player部分默认已经在widget处检查过合法状态转移
@@ -377,7 +400,13 @@ void Widget::updateIntents() {
     else if (pressedKeys.contains(Qt::Key_L)) intent[1].moveIntent = MoveIntent::MOVING_RIGHT;
     else intent[1].moveIntent = MoveIntent::NONE;
     intent[1].attackIntent = pressedKeys.contains(Qt::Key_O);
-    //qDebug()<<intent[1].moveIntent;
+    if (pressedKeys.contains(Qt::Key_N)){
+        auto& p = players[1];
+        p->activeSlotIndex = (p->activeSlotIndex + 1) % p->weaponSlots.size(); // 切换武器槽
+        p->weapon = p->weaponSlots[p->activeSlotIndex];
+    }
+    if (pressedKeys.contains(Qt::Key_U))
+        tryActivateSpell(1);
 }
 
 
@@ -438,6 +467,7 @@ void Widget::gameLoop() {
     controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
     cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
     updateBalls(dt);
+    tickSpells(dt);   // 检查法术冷却
     //qDebug() << "Entity count: " << entities.size();
     entities.erase(std::remove_if(entities.begin(), entities.end(),
                                [](const std::shared_ptr<Entity>& e) {
@@ -731,4 +761,96 @@ void Widget::onModifierChosen(const ModifierData& chosen) {
     pendingModifierPlayer = -1;
     lastTime.restart(); // 重置计时器，避免因暂停导致的dt过大
     timer->start();  // 恢复游戏
+}
+
+void Widget::tryActivateSpell(int playerIndex) {
+    auto& p  = players[playerIndex];
+    auto& ss = p->spellState;
+
+    GameSession::Spell spell = (playerIndex == 0)
+                                   ? currentSession.spellP1
+                                   : currentSession.spellP2;
+
+    if (spell == GameSession::Spell::NONE) return;
+    if (ss.isOnCooldown()) return;
+
+    // ── 前置条件检查 ─────────────────────────────────────────
+    auto& ctrl = controllers[playerIndex];
+    bool inHurt = ctrl->isInHurt(); // 见第6节，PlayerController新增方法
+
+    // 定身：非硬直状态才可用
+    if (spell == GameSession::Spell::FREEZE && inHurt) return;
+
+    // 隐身：非硬直、非被定身才可用
+    if (spell == GameSession::Spell::STEALTH &&
+        (inHurt || p->spellState.isFrozen)) return;
+
+    // ── 激活法术 ─────────────────────────────────────────────
+    switch (spell) {
+
+    case GameSession::Spell::FREEZE: {
+        // 对手进入定身
+        int oppIdx = 1 - playerIndex;
+        auto& opp  = players[oppIdx];
+        auto& oppSS= opp->spellState;
+
+        float duration = 5.f + p->modifiers.freezeDurationBonus;
+        float breakThresh = opp->maxHp * 0.2f; // maxHp的20%破定身
+
+        oppSS.isFrozen          = true;
+        oppSS.frozenRemain      = duration;
+        oppSS.frozenBreakHpLeft = breakThresh;
+
+        // 对手速度清零、解除隐身
+        opp->vx = 0;
+        opp->vy = 0;
+        if (oppSS.stealthActive) {
+            oppSS.stealthActive = false;
+            oppSS.stealthRemain = 0.f;
+        }
+
+        // 施法方进入冷却
+        float cd = 40.f - p->modifiers.spellCooldownReduce;
+        ss.cooldownMax    = qMax(5.f, cd);
+        ss.cooldownRemain = ss.cooldownMax;
+        break;
+    }
+
+    case GameSession::Spell::STEALTH: {
+        float duration = 15.f + p->modifiers.stealthDurationBonus;
+        ss.stealthActive = true;
+        ss.stealthRemain = duration;
+
+        float cd = 45.f - p->modifiers.spellCooldownReduce;
+        ss.cooldownMax    = qMax(5.f, cd);
+        ss.cooldownRemain = ss.cooldownMax;
+        break;
+    }
+
+    // ── 后续法术接口预留 ─────────────────────────────────────
+    case GameSession::Spell::BARRIER:
+    case GameSession::Spell::IRON_BODY:
+    case GameSession::Spell::CLONE:
+    case GameSession::Spell::FORBIDDEN:
+        // TODO: 后续实现
+        break;
+
+    default: break;
+    }
+}
+
+void Widget::tickSpells(float dt) {
+    for (int i = 0; i < players.size(); ++i) {
+        auto& p  = players[i];
+        auto& ss = p->spellState;
+
+        // ── 隐身回血（词条效果）──────────────────────────────
+        if (ss.stealthActive && p->modifiers.stealthRegenPerSec > 0.f) {
+            p->hp = qMin(p->maxHp,
+                         p->hp + p->modifiers.stealthRegenPerSec * dt);
+        }
+
+        // ── tick 推进所有计时器（内部自动关闭到期状态）───────
+        ss.tick(dt);
+    }
 }

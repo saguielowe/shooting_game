@@ -35,7 +35,7 @@ struct GameSession {
     // ---- 初始装备参数（原来 initSettings 的内容）--------
     float   maxHp      = 100.f;
     int     maxBalls   = 3;
-    int     maxBullets = 10;
+    int     maxBullets = 5;
     int     maxSnipers = 3;
 
     // ---- 法术选择 ----------------------------------------

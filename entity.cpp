@@ -2,7 +2,7 @@
 #include <QDebug>
 
 Entity::Entity(QPointF pos, int id): position(pos), parentId(id){
-    qDebug() << "【entity】："<<id;
+    //qDebug() << "【entity】："<<id;
 }
 
 void Entity::setDt(float t){

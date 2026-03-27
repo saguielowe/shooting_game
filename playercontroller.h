@@ -28,9 +28,15 @@ public:
     float getDefenseMultiplier(Player::WeaponType weaponType) const{
         return player.lock()->getDefenseMultiplier(weaponType);
     }
+    bool isInHurt() const { return cooldowns.value("hurt", 0) > 0; }
+    bool  isFrozen()            const { return player.lock()->spellState.isFrozen; }
+    float getFreezeDmgMultiplier() const {
+        return player.lock()->modifiers.freezeDmgMultiplier;
+    }
 
 signals:
     void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon, float damage, int id); // 🟩 投掷请求（不需要传目标）
+    void frozenBroken(int victimId);  // 定身被打破，通知Widget处理CDR词条
 private:
     std::weak_ptr<Player> player;
     QMap <QString, float> cooldowns;

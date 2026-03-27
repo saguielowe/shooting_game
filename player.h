@@ -54,7 +54,7 @@ public:
     int   maxBalls;
     int   maxBullets;
     int   maxSnipers;
-    int ballCount = 0, bulletCount = 0;
+    int ballCount = 0, rifleCount = 0, sniperCount = 0;
     bool hpRegenerate = false; // 回血状态
     bool direction = 1; // 1：右，0：左
     float regenerateTime = 0;
@@ -139,6 +139,7 @@ public:
  
     // initMaxHp：出厂血量上限，词条倍率基于它，不要基于当前maxHp叠乘
     float initMaxHp = 100.f;  // 在构造函数里赋值为传入的maxHp参数
+    void updateSlots();
 
     /* mode=0 正常模式
      * mode=1 投掷模式：实心球可投掷数量翻倍
