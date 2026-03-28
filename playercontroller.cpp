@@ -69,9 +69,7 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
             if (player.lock()->vx != 0){ // 此处步枪和狙击枪统一命令
                 emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->id);
             }
-            // 实心球伤害时高时低，有时40，有时只有个位数
             // 血量上限加减有问题
-            // 准备引入法术系统
             else{
                 float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
                 emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->id);
@@ -190,11 +188,6 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
     if (cooldowns["hurt"] != 0) return;
     if (damage < 1) return;
 
-    if (weaponType == Player::WeaponType::ball) {
-        damage = fmin(damage, 0.4 * player.lock()->maxHp);
-        qDebug() << "ball final damage:" << damage;
-    }
-
     if (player.lock()->armor == Player::ArmorType::chainmail) {
         if (weaponType == Player::WeaponType::punch) return;
         else if (weaponType == Player::WeaponType::knife) damage /= 2;
@@ -219,14 +212,20 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
                               .arg(player.lock()->hp - damage, 0, 'f', 1);
 
     player.lock()->hp -= damage;
-    cooldowns["hurt"] = 1;
-
+    float ratio = damage / player.lock()->maxHp;      // 归一化到[0,1]
+    if (ratio < 0.03f){
+        player.lock()->state.moveState = "hurt";
+        player.lock()->update();
+        return;
+    }
+    float stun = 2.24f * sqrtf(ratio);
+    cooldowns["hurt"] = qMin(stun, 1.8f);  // 上限1.8秒
     if (direction == "left") {
         player.lock()->vx = 60;
-        player.lock()->vy = -400;
+        player.lock()->vy = -400 * fmin(1.f, damage / 20.f); // 伤害越大击退越远，最多400的初速度
     } else {
         player.lock()->vx = -60;
-        player.lock()->vy = -400;
+        player.lock()->vy = -400 * fmin(1.f, damage / 20.f);
     }
     player.lock()->state.moveState = "hurt";
     player.lock()->update();

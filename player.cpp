@@ -155,65 +155,97 @@ void Player::update(){ // player更新自身位置，animation更新自身动画
     hitbox = animation.getTargetRect();
 }
 
-void Player::draw(QPainter& painter) { // 传窗口painter的引用
-    if (canHide && state.moveState == "crouch"){
-        return;
-    }
-    if (weapon == WeaponType::knife){
-        animation.loadWeapon("knife");
-    }
-    else if (weapon == WeaponType::ball){
-        animation.loadWeapon("ball");
-    }
-    else if (weapon == WeaponType::rifle){
-        animation.loadWeapon("rifle");
-    }
-    else if (weapon == WeaponType::sniper){
-        animation.loadWeapon("sniper");
-    }
-    else if (weapon == WeaponType::punch){
-        animation.loadWeapon("no_weapon"); // 无武器时不渲染
+void Player::draw(QPainter& painter) {
+    if (canHide && state.moveState == "crouch") return;
+
+    // ── 隐身：整体半透明 ─────────────────────────────────────
+    // 在 painter 上设置透明度，draw完再恢复
+    bool isStealthed = spellState.stealthActive;
+    if (isStealthed) {
+        painter.save();
+        painter.setOpacity(0.35);  // 35%不透明度，能看到轮廓但明显变淡
     }
 
-    if (direction){
-        animation.draw(painter, x, y, false, (state.moveState == "null") && (!state.shootState));
-        // if (state.shootState && (weapon == WeaponType::rifle || weapon == WeaponType::sniper)){
-        //     animation.paintGun(painter, x+53, y+12);
-        // }
+    // ── 原有武器加载逻辑（不变）─────────────────────────────
+    if (weapon == WeaponType::knife)       animation.loadWeapon("knife");
+    else if (weapon == WeaponType::ball)   animation.loadWeapon("ball");
+    else if (weapon == WeaponType::rifle)  animation.loadWeapon("rifle");
+    else if (weapon == WeaponType::sniper) animation.loadWeapon("sniper");
+    else if (weapon == WeaponType::punch)  animation.loadWeapon("no_weapon");
+
+    // ── 原有动画绘制（不变）─────────────────────────────────
+    bool armed = (state.moveState == "null") && (!state.shootState);
+    if (direction)
+        animation.draw(painter, x, y, false, armed);
+    else
+        animation.draw(painter, x, y, true, armed);
+
+    // ── 隐身恢复透明度 ───────────────────────────────────────
+    if (isStealthed) {
+        painter.restore();
+        // restore之后再画"隐身中"淡紫色轮廓，不受透明度影响
+        painter.save();
+        QPen glowPen(QColor(180, 100, 255, 120), 2, Qt::DashLine);
+        painter.setPen(glowPen);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(hitbox);
+        painter.restore();
     }
-    else{
-        animation.draw(painter, x, y, true, (state.moveState == "null") && (!state.shootState)); // 播放动画
+
+    // ── 定身：冰蓝色光晕（画在人物周围）────────────────────
+    if (spellState.isFrozen) {
+        painter.save();
+
+        // 外圈光晕：大一圈的矩形，半透明冰蓝
+        QRect glowRect = hitbox.adjusted(-6, -6, 6, 6);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(100, 200, 255, 60));
+        painter.drawRoundedRect(glowRect, 8, 8);
+
+        // 内圈边框：实线冰蓝
+        QPen icePen(QColor(140, 220, 255, 200), 2);
+        painter.setPen(icePen);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRoundedRect(hitbox.adjusted(-3, -3, 3, 3), 5, 5);
+
+        // 定身剩余时间（显示在头顶血条上方）
+        painter.setPen(QColor(140, 220, 255));
+        QFont f = painter.font();
+        f.setPixelSize(11);
+        painter.setFont(f);
+        painter.drawText(
+            hitbox.left(), hitbox.top() - 55,
+            QString("冰冻 %1s").arg(spellState.frozenRemain, 0, 'f', 1)
+            );
+
+        painter.restore();
     }
-    // 绘制灰色背景
+
+    // ── 原有血条逻辑（不变）─────────────────────────────────
     QRect backgroundRect(hitbox.left(), hitbox.top() - 20, 100, 15);
     painter.setBrush(Qt::gray);
     painter.drawRect(backgroundRect);
 
-    // 绘制红色血条
     int barWidth = static_cast<int>(100 * (fmax(0, hp) / maxHp));
     QRect healthRect(hitbox.left(), hitbox.top() - 20, barWidth, 15);
     painter.setBrush(Qt::red);
     painter.drawRect(healthRect);
     painter.drawText(healthRect, QString::number(int(hp)));
-    painter.drawText(hitbox.left() - 10, hitbox.top(), (id?"右":"左"));
+    painter.drawText(hitbox.left() - 10, hitbox.top(), (id ? "右" : "左"));
 
     if (armor == ArmorType::noArmor) return;
 
-    // 绘制护盾条
     QRect backgroundRect2(hitbox.left(), hitbox.top() - 40, 100, 15);
     painter.setBrush(Qt::gray);
-
-    if (armor == ArmorType::chainmail){
+    if (armor == ArmorType::chainmail) {
         painter.setBrush(Qt::white);
         painter.drawRect(hitbox.left(), hitbox.top() - 40, 100, 15);
     }
-    else if (armor == ArmorType::vest){
+    else if (armor == ArmorType::vest) {
         painter.setBrush(QColor(165, 42, 42));
         painter.drawRect(hitbox.left(), hitbox.top() - 40, int(vestHardness), 15);
     }
 }
-
-
 
 bool Player::isDead() const{
     return hp<=0 ;
@@ -234,20 +266,20 @@ void Player::applyModifier(const ModifierData& mod) {
         break;
 
     case ModifierType::MOVE_SPEED_UP:
-        modifiers.moveSpeedMultiplier += 0.15f;
+        modifiers.moveSpeedMultiplier += 0.2f;
         selfvelocityratio = velocityratio * modifiers.moveSpeedMultiplier;
         break;
 
     case ModifierType::PUNCH_DAMAGE_UP:
-        modifiers.punchDmgMultiplier += 1.0f; // +100%
+        modifiers.punchDmgMultiplier += 0.8f; // +100%
         break;
 
     case ModifierType::KNIFE_DAMAGE_UP:
-        modifiers.knifeDmgMultiplier += 0.5f;
+        modifiers.knifeDmgMultiplier += 0.4f;
         break;
 
     case ModifierType::BALL_DAMAGE_UP:
-        modifiers.ballDmgMultiplier += 0.3f;
+        modifiers.ballDmgMultiplier += 0.2f;
         break;
 
     case ModifierType::GUN_DAMAGE_UP:
@@ -255,11 +287,11 @@ void Player::applyModifier(const ModifierData& mod) {
         break;
 
     case ModifierType::DAMAGE_BONUS_UP:
-        modifiers.damageBonusMultiplier += 0.2f;
+        modifiers.damageBonusMultiplier += 0.25f;
         break;
 
     case ModifierType::DAMAGE_REDUCTION_UP:
-        modifiers.damageReduction = qMin(1.0f, modifiers.damageReduction + 0.2f);
+        modifiers.damageReduction = qMin(0.6f, modifiers.damageReduction + 0.2f);
         break;
 
     case ModifierType::DOUBLE_EDGE:
@@ -330,7 +362,7 @@ void Player::applyModifier(const ModifierData& mod) {
     // ── 禁字法 ────────────────────────────────────────────
     case ModifierType::FORBIDDEN_WORD:
         modifiers.forbiddenWord = true;
-        modifiers.damageBonusMultiplier += 1.0f; // +100%
+        modifiers.damageBonusMultiplier += 0.5f; // +100%
         break;
 
     default:
@@ -366,8 +398,9 @@ float Player::getAttackDamage() const {
     case WeaponType::sniper: base = 1.f * modifiers.gunDmgMultiplier;   break;
     }
     base *= modifiers.damageBonusMultiplier;
-    if (modifiers.doubleEdge) base *= 2.f;
+    if (modifiers.doubleEdge) base *= 1.5f;
     // 法术加成由各法术在激活时额外乘，这里不处理
+    qDebug()<<"player's basic attack damage (weapon specific):"<<base;
     return base;
 }
 
@@ -376,7 +409,7 @@ float Player::getDefenseMultiplier(WeaponType weaponType) const {
 
     float totalReduction = qMin(1.0f, modifiers.damageReduction);
     float multiplier = 1.0f - totalReduction;
-    if (modifiers.doubleEdge) multiplier *= 2.f;
+    if (modifiers.doubleEdge) multiplier *= 1.5f;
     return multiplier;
 }
 

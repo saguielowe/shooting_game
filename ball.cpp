@@ -6,7 +6,7 @@
 #include <QPixmap>
 #include <QDebug>
 Ball::Ball(QPointF pos, QPointF v, float initDamage, int id) : Entity(pos, id) {
-    qDebug() <<"【ball】："<<id;
+    //qDebug() <<"【ball】："<<id;
     velocity = v;
     lifetime = 0;
     basicDamage = initDamage;
@@ -56,16 +56,24 @@ void Ball::update(){
 }
 
 void Ball::onCollideWithPlayer(){
-    basicDamage /= 1.5; // 多次撞击伤害减小
+    if (lifetime >= 1) basicDamage /= 1.5; // 多次撞击伤害减小，前提是真的打到别人了
 }
 
 float Ball::getDamage(int id){
-    qDebug()<<"受伤者: "<<id;
+    //qDebug()<<"受伤者: "<<id;
     if (parentId == id){
         return 0; // 投掷者在投掷后短时间内豁免撞击
     }
-    //qDebug() << "削减前伤害："<<basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y());
-    return basicDamage * (velocity.x() * velocity.x() + velocity.y() * velocity.y()) / 10000;
+    float maxDamage = 50.f;  // 上限25%血
+    int kineticEnergy = basicDamage * velocity.x() * velocity.x() + velocity.y() * velocity.y(); // 基础攻击力作用于动能，不至于影响过大
+    float x = (kineticEnergy - 1500000.f) / 300000.f;
+    float sig = 1.0f / (1.0f + expf(-x)); // 用sigmoid函数将伤害根据动能平滑映射到0-maxDamage范围，动能在90万到150万之间时伤害增长较快，超过150万后趋近于maxDamage
+    
+    // 微调：偏移0.047，系数2.2
+    float damage = maxDamage * 2.0f * sig ;
+    qDebug() << "基础伤害："<<basicDamage <<" 动能："<< kineticEnergy;
+    return qMax(0.f, damage);
+    
     // 这里只计算削减前的伤害，削减在combat manager里根据玩家状态进行
 }
 

@@ -11,6 +11,7 @@ static QString weaponName(Player::WeaponType w) {
     }
     return "未知";
 }
+// 定身伤害加成未计算；隐身的朝AI隐身效果未实现；法术CD减少需要马上更新；血量加成需要更新逻辑
 CombatManager::CombatManager() {}
 
 void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerController *p2)
@@ -49,6 +50,8 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
         // p2 攻击命中 p1
         if (p2->canAttack()) {
             float baseDmg  = p2->getAttackDamage();
+            if (p1->isFrozen())  // 考虑p1被定身时受到的额外伤害
+                baseDmg *= p2->getFreezeDmgMultiplier();
             float defMult  = p1->getDefenseMultiplier(p2->getWeaponType());
             float finalDmg = baseDmg * defMult;
 

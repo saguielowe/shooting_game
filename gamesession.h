@@ -33,10 +33,10 @@ struct GameSession {
     QString scene   = "default";
 
     // ---- 初始装备参数（原来 initSettings 的内容）--------
-    float   maxHp      = 100.f;
+    float   maxHp      = 200.f;
     int     maxBalls   = 3;
     int     maxBullets = 5;
-    int     maxSnipers = 3;
+    int     maxSnipers = 2;
 
     // ---- 法术选择 ----------------------------------------
     Spell   spellP1 = Spell::NONE;
