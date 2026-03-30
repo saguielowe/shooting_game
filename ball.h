@@ -15,6 +15,8 @@ public:
 private:
     QPixmap pixmap;
     float lifetime, basicDamage=0;
+    QMap<int, float> hitCooldowns;
+    float parentImmunityTime = 0.3f; // 施放者豁免时间（秒）
 };
 
 #endif // BALL_H

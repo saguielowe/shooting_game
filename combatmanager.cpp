@@ -11,8 +11,8 @@ static QString weaponName(Player::WeaponType w) {
     }
     return "未知";
 }
-// 血量加成需要更新逻辑；添加一些音效。
-// 枪械远程定身伤害加成仍不确定有效，实心球多次判定需要改（硬直较短可多次触发）
+// 添加一些音效，实心球多次判定需要改（硬直较短可多次触发），铜头铁臂法术（定身可破）
+// 无尽模式制作，ai逻辑更新？
 CombatManager::CombatManager() {}
 
 void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerController *p2)

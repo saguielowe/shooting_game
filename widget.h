@@ -82,6 +82,9 @@ private:
 
     QTimer* timer;
     QElapsedTimer lastTime;
+    float m_gameTime        = 0.f;  // 当前局内时间（秒）
+    float m_timeSinceLastDrop = 0.f; // 距上次掉落经过的时间
+    static const float DROP_GUARANTEE_TIME; // 保底时间，20秒
     CombatManager cm;
 
     QString currentScene;

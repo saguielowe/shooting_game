@@ -99,9 +99,9 @@ inline QVector<ModifierData> ModifierData::allGeneric() {
         { ModifierType::KNIFE_DAMAGE_UP,       "刀光剑影",    "增加小刀伤害 50%" },
         { ModifierType::BALL_DAMAGE_UP,        "石破天惊",    "增加实心球伤害 30%" },
         { ModifierType::GUN_DAMAGE_UP,         "弹无虚发",    "增加枪械伤害 30%" },
-        { ModifierType::DAMAGE_BONUS_UP,       "锋芒毕露",    "提高伤害加成 20%" },
+        { ModifierType::DAMAGE_BONUS_UP,       "锋芒毕露",    "提高伤害加成 25%" },
         { ModifierType::DAMAGE_REDUCTION_UP,   "金刚不坏",    "增加伤害减免 20%" },
-        { ModifierType::DOUBLE_EDGE,           "两败俱伤",    "造成与受到的伤害均翻倍" },
+        { ModifierType::DOUBLE_EDGE,           "两败俱伤",    "造成与受到的伤害增加 50%" },
         { ModifierType::EXTRA_WEAPON_SLOT,     "百宝囊",      "获得一个额外武器槽位" },
     };
 }
@@ -109,7 +109,7 @@ inline QVector<ModifierData> ModifierData::allGeneric() {
 inline QVector<ModifierData> ModifierData::forSpell(const QString& spellName) {
     if (spellName == "freeze") {
         return {
-            { ModifierType::FREEZE_DURATION_UP,  "长缚",     "增加定身持续时间 2秒" },
+            { ModifierType::FREEZE_DURATION_UP,  "长缚",     "增加定身持续时间 1.5秒" },
             { ModifierType::FREEZE_DAMAGE_UP,    "缚中伤",   "定身期间造成的伤害 +20%" },
             { ModifierType::FREEZE_BREAK_CDR,    "破而后立", "定身破碎后减少冷却 5秒（唯一）" },
         };
@@ -120,7 +120,7 @@ inline QVector<ModifierData> ModifierData::forSpell(const QString& spellName) {
                 { ModifierType::STEALTH_SPEED_UP,    "影疾",   "隐身时移动速度 +20%" },
                 { ModifierType::STEALTH_REGEN,       "潜息",   "隐身时每秒回血 +2点" },
                 { ModifierType::STEALTH_FIRST_HIT,   "破影一击",
-                 "隐身时长减半，但第一击伤害翻倍并解除隐身（唯一）" },
+                 "隐身时长减半，但第一击伤害随隐身时长增加，并解除隐身（唯一）" },
                 };
     }
     if (spellName == "barrier") {

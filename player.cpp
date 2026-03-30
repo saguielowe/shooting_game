@@ -372,7 +372,7 @@ void Player::applyEnemyModifier(const ModifierData& mod) {
     case ModifierType::ENEMY_MAX_HP_DOWN:
         modifiers.maxHpMultiplier = qMax(0.2f, modifiers.maxHpMultiplier - 0.2f);
         maxHp = maxHp * modifiers.maxHpMultiplier;
-        hp *= modifiers.maxHpMultiplier;
+        hp = qMin(hp, maxHp);
         break;
     case ModifierType::ENEMY_MOVE_SPEED_DOWN:
         modifiers.moveSpeedMultiplier = qMax(0.3f, modifiers.moveSpeedMultiplier - 0.15f);
@@ -396,7 +396,17 @@ float Player::getAttackDamage(){
     base *= modifiers.damageBonusMultiplier;
     if (modifiers.doubleEdge) base *= 1.5f;
     if (spellState.stealthActive && modifiers.stealthFirstHit && !spellState.stealthFirstHitUsed) {
-        base *= 2.f; // combat manager计算伤害时会调用此函数，触发后会被标记为已用
+        // 隐身总时长
+        float totalDuration = 15.f + modifiers.stealthDurationBonus;
+        if (modifiers.stealthFirstHit) totalDuration /= 2.f;
+
+        // 已经过了多少时间
+        float elapsed = totalDuration - spellState.stealthRemain;
+        float ratio   = qMin(elapsed / totalDuration, 1.0f);
+
+        // 线性从1.0增长到2.0
+        float bonus = 1.0f + ratio;
+        base *= bonus; // combat manager计算伤害时会调用此函数，触发后会被标记为已用
         spellState.stealthFirstHitUsed = true;
         spellState.stealthActive = false; // 破影一击触发后隐身效果消失
         spellState.stealthRemain = 0;
