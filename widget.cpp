@@ -621,7 +621,7 @@ void Widget::gameEnd(int id)
     }, Qt::SingleShotConnection);
 }
 
-void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, int id) {
+void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, float frozenBonus, int id) {
     //qDebug() <<"【onplayer】发射者： "<<id;
     if (weapon == Player::WeaponType::ball){
         if (vx > 0){
@@ -636,7 +636,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else{
             vy -= 500;
         }*/
-        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy), initDamage, id);
+        auto ball = std::make_shared<Ball>(QPointF(x, y), QPointF(vx, vy), initDamage, frozenBonus, id);
         entities.push_back(ball);
         balls.push_back(ball);
     }
@@ -647,7 +647,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -2000;
         }
-        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1, initDamage, id);
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 1, initDamage, frozenBonus, id);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }
@@ -658,7 +658,7 @@ void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::Weapo
         else if (vx < 0){
             vx = -3000;
         }
-        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2, initDamage, id);
+        auto bullet = std::make_shared<Bullet>(QPointF(x, y), vx, 2, initDamage, frozenBonus, id);
         entities.push_back(bullet);
         bullets.push_back(bullet);
     }
@@ -818,8 +818,11 @@ void Widget::tryActivateSpell(int playerIndex) {
 
     case GameSession::Spell::STEALTH: {
         float duration = 15.f + p->modifiers.stealthDurationBonus;
-        ss.stealthActive = true;
-        ss.stealthRemain = duration;
+        if (p->modifiers.stealthFirstHit) duration /= 2.f; // 破影减半时长
+
+        ss.stealthActive       = true;
+        ss.stealthRemain       = duration;
+        ss.stealthFirstHitUsed = false;  // 每次激活重置
 
         float cd = 45.f - p->modifiers.spellCooldownReduce;
         ss.cooldownMax    = qMax(5.f, cd);

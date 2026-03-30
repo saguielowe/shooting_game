@@ -61,18 +61,18 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         player.lock()->state.shootState = true; // 当按下攻击键且不处于冷却，判定可以攻击，打不打到无所谓
         triggerAttackCooldown();
         if (player.lock()->weapon == Player::WeaponType::ball && player.lock()->ballCount > 0){
-            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, getAttackDamage(), player.lock()->id);
+            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, getAttackDamage(), player.lock()->modifiers.freezeDmgMultiplier, player.lock()->id);
             player.lock()->ballCount --;
             player.lock()->updateSlots();
         }
         else if (player.lock()->weapon == Player::WeaponType::rifle || player.lock()->weapon == Player::WeaponType::sniper){
             if (player.lock()->vx != 0){ // 此处步枪和狙击枪统一命令
-                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->id);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->modifiers.freezeDmgMultiplier, player.lock()->id);
             }
             // 血量上限加减有问题
             else{
                 float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
-                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->id);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->modifiers.freezeDmgMultiplier, player.lock()->id);
             }
             if (player.lock()->weapon == Player::WeaponType::rifle){
                 SoundManager::instance().play("rifle", 0.4);
@@ -125,9 +125,9 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
     if (player.lock()->spellState.isFrozen) {
         if (damage < 1) return;
 
-        // ── 护甲减伤（和普通受击一样处理）──────────────────
+        // 护甲减伤（同普通受击）
         if (player.lock()->armor == Player::ArmorType::chainmail) {
-            if (weaponType == Player::WeaponType::punch) return; // 免疫拳击
+            if (weaponType == Player::WeaponType::punch) return;
             else if (weaponType == Player::WeaponType::knife) damage /= 2;
         }
         else if (player.lock()->armor == Player::ArmorType::vest
@@ -141,27 +141,28 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
             }
         }
 
-        // ── 音效 ────────────────────────────────────────────
         SoundManager::instance().play("hit", 0.5);
 
-        // ── 扣血打印 ────────────────────────────────────────
-        qDebug().noquote() << QString("[定身受击] P%1 | 伤害:%2 | HP:%3 → %4")
+        player.lock()->hp -= damage;
+        auto& ss = player.lock()->spellState;
+        ss.frozenBreakHpLeft  -= damage;
+        ss.frozenTotalDamage  += damage;  // 新增：累计伤害
+
+        qDebug().noquote() << QString("[定身受击] P%1 | 伤害:%2 | 累计:%3 | HP:%4 → %5")
                                   .arg(player.lock()->id + 1)
                                   .arg(damage, 0, 'f', 1)
-                                  .arg(player.lock()->hp, 0, 'f', 1)
-                                  .arg(player.lock()->hp - damage, 0, 'f', 1);
-
-        player.lock()->hp -= damage;
-
-        // ── 累计判断是否破定身 ──────────────────────────────
-        auto& ss = player.lock()->spellState;
-        ss.frozenBreakHpLeft -= damage;
+                                  .arg(ss.frozenTotalDamage, 0, 'f', 1)
+                                  .arg(player.lock()->hp + damage, 0, 'f', 1)
+                                  .arg(player.lock()->hp, 0, 'f', 1);
 
         if (ss.frozenBreakHpLeft <= 0) {
-            ss.isFrozen     = false;
+            ss.isFrozen    = false;
             ss.frozenRemain = 0.f;
 
-            float stunTime = 1.f + player.lock()->modifiers.freezeStunBonus;
+            // ── 用sqrt函数算硬直，基于累计伤害 ──────────────
+            float ratio    = ss.frozenTotalDamage / player.lock()->maxHp;
+            float stunTime = 2.24f * sqrtf(ratio);
+            stunTime = qMin(stunTime, 1.8f);
             cooldowns["hurt"] = stunTime;
 
             // 击退
@@ -175,13 +176,16 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
             player.lock()->state.moveState = "hurt";
             player.lock()->update();
 
-            qDebug().noquote() << QString("[定身破除] P%1 | 硬直:%2s")
-                                      .arg(player.lock()->id + 1)
-                                      .arg(stunTime, 0, 'f', 1);
+            SoundManager::instance().play("freeze_break", 0.7);
 
+            qDebug().noquote() << QString("[定身破除] P%1 | 硬直:%.2fs")
+                                      .arg(player.lock()->id + 1)
+                                      .arg(stunTime, 0, 'f', 2);
+
+            ss.frozenTotalDamage = 0.f;  // 重置累计伤害
             emit frozenBroken(player.lock()->id);
         }
-        return; // 不走后续普通受击逻辑
+        return;
     }
 
     // ── 普通受击：原有逻辑完全不变 ──────────────────────────

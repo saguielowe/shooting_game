@@ -4,7 +4,7 @@
 class Ball : public Entity
 {
 public:
-    Ball(QPointF pos, QPointF v, float initDamage, int id);
+    Ball(QPointF pos, QPointF v, float initDamage, float frozenBonus, int id);
     void update() override;
     void draw(QPainter &painter) override;
     void onCollideWithPlayer() override;

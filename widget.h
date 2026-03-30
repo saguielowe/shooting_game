@@ -45,7 +45,7 @@ protected:
 
 private slots:
     void gameLoop();
-    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, int id);
+    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, float frozenBonus, int id);
 signals:
     void keyPressed();
     void roundEnded(int winnerId);  // 一局结束，传赢家 id

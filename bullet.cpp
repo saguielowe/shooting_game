@@ -3,7 +3,7 @@
 #include "map.h"
 #include <QDebug>
 
-Bullet::Bullet(QPointF pos, float vx, int type, float initDamage, int id) : Entity(pos, id), type(type) {
+Bullet::Bullet(QPointF pos, float vx, int type, float initDamage, float frozenBonus, int id) : Entity(pos, id, frozenBonus), type(type) {
     velocity = QPointF(vx, 0);
     QString path = ":/items/assets/items/bullet.png";
     pixmap = QPixmap(path).scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation);

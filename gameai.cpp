@@ -95,6 +95,21 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
         return;
     }
 
+    auto target = m_targetPlayer.lock();
+    if (target->spellState.stealthActive) {
+        m_targetVisible = false;
+        // 最后已知位置保持不变，AI去那里找
+    } else {
+        m_targetVisible = true;
+        m_lastKnownTargetPos = getPlayerPosition(target);
+    }
+
+    // 隐身时：直接走特殊逻辑，跳过正常状态机
+    if (!m_targetVisible) {
+        handleStealthTarget(moveIntent, attackIntent);
+        return;
+    }
+
     // === 卡住检测和处理（最高优先级） ===
     if (isStuck()) {
         handleStuckSituation(moveIntent);
@@ -895,4 +910,24 @@ QPointF GameAI::findBestSupply() {
     }
 
     return bestPos; // 没有想要的护甲，放弃
+}
+
+void GameAI::handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent) {
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return;
+
+    attackIntent = false;  // 看不到目标不攻击
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    float dist = distance(aiPos, m_lastKnownTargetPos);
+
+    if (dist > 40.f) {
+        // 还没到最后已知位置，继续走过去
+        executeMoveTo(m_lastKnownTargetPos, moveIntent, 40.f);
+    } else {
+        // 到了还没找到，随机游走
+        moveIntent = (m_dis(m_gen) > 0.5)
+                         ? MoveIntent::MOVING_LEFT
+                         : MoveIntent::MOVING_RIGHT;
+    }
 }

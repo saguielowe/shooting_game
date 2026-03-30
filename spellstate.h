@@ -16,10 +16,12 @@ struct SpellState {
     bool  isFrozen            = false;
     float frozenRemain        = 0.f;   // 剩余定身时间（秒）
     float frozenBreakHpLeft   = 0.f;   // 还需受到多少伤害才破定身
+    float frozenTotalDamage    = 0.f;   // 新增：定身期间累计受伤，用于算硬直
 
     // ── 隐身（自身激活）─────────────────────────────────────
     bool  stealthActive  = false;
     float stealthRemain  = 0.f;   // 剩余隐身时间（秒）
+    bool  stealthFirstHitUsed  = false;  // 本次隐身第一击是否已触发，新增
 
     // ── 接口预留（后续法术填充）─────────────────────────────
     bool  barrierActive  = false;

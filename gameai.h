@@ -149,10 +149,13 @@ private:
     bool isRangedWeapon(const QString& weaponType) const;
     void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
     float getRangedAttackDistance(const QString& weaponType) const;
+    void handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent);
 private:
     // 预定动作序列
     QQueue<MoveIntent> m_plannedMoves;     // 预定的动作队列
     bool m_executingPlan;                  // 是否在执行预定计划
+    QPointF m_lastKnownTargetPos;
+    bool    m_targetVisible = true;
 
 public:
     void planMoveSequence(const QVector<MoveIntent>& moves); // 设定动作序列

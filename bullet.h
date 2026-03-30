@@ -4,7 +4,7 @@
 class Bullet : public Entity
 {
 public:
-    Bullet(QPointF pos, float vx, int type, float initDamage, int id); // type=1：rifle，type=2：sniper
+    Bullet(QPointF pos, float vx, int type, float initDamage, float frozenBonus, int id); // type=1：rifle，type=2：sniper
     void update() override;
     void draw(QPainter &painter) override;
     void onCollideWithPlayer() override;

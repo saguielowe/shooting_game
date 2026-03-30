@@ -5,8 +5,8 @@
 #include "soundmanager.h"
 #include <QPixmap>
 #include <QDebug>
-Ball::Ball(QPointF pos, QPointF v, float initDamage, int id) : Entity(pos, id) {
-    //qDebug() <<"【ball】："<<id;
+Ball::Ball(QPointF pos, QPointF v, float initDamage, float frozenBonus, int id) : Entity(pos, id, frozenBonus) {
+    qDebug() <<"【ball】："<<frozenBonus;
     velocity = v;
     lifetime = 0;
     basicDamage = initDamage;

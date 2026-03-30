@@ -33,9 +33,24 @@ public:
     float getFreezeDmgMultiplier() const {
         return player.lock()->modifiers.freezeDmgMultiplier;
     }
+    bool  isStealthed() const {
+        return player.lock()->spellState.stealthActive;
+    }
+    const Player::ModifierState& getModifiers() const {
+        return player.lock()->modifiers;
+    }
+    const SpellState& getSpellState() const {
+        return player.lock()->spellState;
+    }
+    void triggerStealthFirstHit() {
+        auto p = player.lock();
+        p->spellState.stealthFirstHitUsed = true;
+        p->spellState.stealthActive       = false;
+        p->spellState.stealthRemain       = 0.f;
+    }
 
 signals:
-    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon, float damage, int id); // 🟩 投掷请求（不需要传目标）
+    void requestThrowBall(float x, float y, float vx, float vy, Player::WeaponType weapon, float damage, float frozenBonus, int id); // 🟩 投掷请求（不需要传目标）
     void frozenBroken(int victimId);  // 定身被打破，通知Widget处理CDR词条
 private:
     std::weak_ptr<Player> player;

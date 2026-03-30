@@ -34,7 +34,7 @@ public:
     void modifyvelocity(float ratio){
         velocityratio = ratio;
     }
-    float getAttackDamage() const;
+    float getAttackDamage();
     float getDefenseMultiplier(WeaponType attackerWeapon) const;
 
 
@@ -93,9 +93,9 @@ public:
 
         float stealthDurationBonus  = 0.f;
         float stealthSpeedMultiplier= 1.0f;
-        float stealthDmgReduction   = 0.0f; // 上限 1.0
         float stealthDmgMultiplier  = 1.0f;
         float stealthRegenPerSec    = 0.f;
+        bool  stealthFirstHit       = false; // 破影一击
 
         float barrierDurationBonus  = 0.f;
         float barrierRegenPerSec    = 1.0f; // 基础1点/秒

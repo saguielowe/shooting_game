@@ -257,6 +257,8 @@ void Player::applyModifier(const ModifierData& mod) {
     // ── 通用词条 ──────────────────────────────────────────
     case ModifierType::SPELL_COOLDOWN_REDUCE:
         modifiers.spellCooldownReduce += 5;
+        spellState.cooldownMax    = qMax(5.f, spellState.cooldownMax - 5.f);    // 总CD缩短
+        spellState.cooldownRemain = qMax(0.f, spellState.cooldownRemain - 5.f); // 当前剩余也立即缩短
         break;
 
     case ModifierType::MAX_HP_UP:
@@ -305,13 +307,10 @@ void Player::applyModifier(const ModifierData& mod) {
 
     // ── 定身词条 ──────────────────────────────────────────
     case ModifierType::FREEZE_DURATION_UP:
-        modifiers.freezeDurationBonus += 2.f;
+        modifiers.freezeDurationBonus += 1.5f;
         break;
     case ModifierType::FREEZE_DAMAGE_UP:
         modifiers.freezeDmgMultiplier += 0.2f;
-        break;
-    case ModifierType::FREEZE_STUN_UP:
-        modifiers.freezeStunBonus += 0.5f;
         break;
     case ModifierType::FREEZE_BREAK_CDR:
         modifiers.freezeBreakCDR = true;
@@ -324,14 +323,11 @@ void Player::applyModifier(const ModifierData& mod) {
     case ModifierType::STEALTH_SPEED_UP:
         modifiers.stealthSpeedMultiplier += 0.2f;
         break;
-    case ModifierType::STEALTH_DAMAGE_REDUCTION:
-        modifiers.stealthDmgReduction = qMin(1.0f, modifiers.stealthDmgReduction + 0.2f);
-        break;
-    case ModifierType::STEALTH_DAMAGE_UP:
-        modifiers.stealthDmgMultiplier += 0.2f;
-        break;
     case ModifierType::STEALTH_REGEN:
-        modifiers.stealthRegenPerSec += 1.f;
+        modifiers.stealthRegenPerSec += 2.f;
+        break;
+    case ModifierType::STEALTH_FIRST_HIT:
+        modifiers.stealthFirstHit = true;
         break;
 
     // ── 安身词条 ──────────────────────────────────────────
@@ -387,8 +383,8 @@ void Player::applyEnemyModifier(const ModifierData& mod) {
     }
 }
 
-// ── getAttackDamage() 修改版 ─────────────────────────────────
-float Player::getAttackDamage() const {
+// ── getAttackDamage() : 处理武器的基础攻击力，以及与攻击方相关的所有伤害加成 ─────────────────────────────
+float Player::getAttackDamage(){
     float base = 0.f;
     switch (weapon) {
     case WeaponType::punch:  base = 5.f * modifiers.punchDmgMultiplier; break;
@@ -399,6 +395,12 @@ float Player::getAttackDamage() const {
     }
     base *= modifiers.damageBonusMultiplier;
     if (modifiers.doubleEdge) base *= 1.5f;
+    if (spellState.stealthActive && modifiers.stealthFirstHit && !spellState.stealthFirstHitUsed) {
+        base *= 2.f; // combat manager计算伤害时会调用此函数，触发后会被标记为已用
+        spellState.stealthFirstHitUsed = true;
+        spellState.stealthActive = false; // 破影一击触发后隐身效果消失
+        spellState.stealthRemain = 0;
+    }
     // 法术加成由各法术在激活时额外乘，这里不处理
     qDebug()<<"player's basic attack damage (weapon specific):"<<base;
     return base;
@@ -547,12 +549,10 @@ QStringList Player::getModifierSummary() const {
         lines << QString("隐身时长 +%1s").arg(int(m.stealthDurationBonus));
     if (m.stealthSpeedMultiplier != 1.f)
         lines << QString("隐身速度 +%1%").arg(int((m.stealthSpeedMultiplier - 1.f) * 100));
-    if (m.stealthDmgReduction > 0.f)
-        lines << QString("隐身减伤 %1%").arg(int(m.stealthDmgReduction * 100));
-    if (m.stealthDmgMultiplier != 1.f)
-        lines << QString("隐身伤害 +%1%").arg(int((m.stealthDmgMultiplier - 1.f) * 100));
     if (m.stealthRegenPerSec > 0.f)
         lines << QString("隐身回血 %1/s").arg(int(m.stealthRegenPerSec));
+    if (m.stealthFirstHit)
+        lines << "破影一击";
 
     // ── 安身词条 ──────────────────────────────────────────
     if (m.barrierDurationBonus > 0.f)

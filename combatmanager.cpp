@@ -11,7 +11,8 @@ static QString weaponName(Player::WeaponType w) {
     }
     return "未知";
 }
-// 定身伤害加成未计算；隐身的朝AI隐身效果未实现；法术CD减少需要马上更新；血量加成需要更新逻辑
+// 血量加成需要更新逻辑；添加一些音效。
+// 枪械远程定身伤害加成仍不确定有效，实心球多次判定需要改（硬直较短可多次触发）
 CombatManager::CombatManager() {}
 
 void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerController *p2)
@@ -31,8 +32,8 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
         // p1 攻击命中 p2
         if (p1->canAttack()) {
             float baseDmg = p1->getAttackDamage();
-            if (p2->isFrozen())  // PlayerController新增，见下
-                baseDmg *= p1->getFreezeDmgMultiplier();  // 见下
+            if (p2->isFrozen())  // 受击者在定身状态下的伤害加成，必须在计算最终伤害前处理
+                baseDmg *= p1->getFreezeDmgMultiplier();
             float defMult  = p2->getDefenseMultiplier(p1->getWeaponType());
             float finalDmg = baseDmg * defMult;
 
@@ -50,7 +51,7 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
         // p2 攻击命中 p1
         if (p2->canAttack()) {
             float baseDmg  = p2->getAttackDamage();
-            if (p1->isFrozen())  // 考虑p1被定身时受到的额外伤害
+            if (p1->isFrozen())
                 baseDmg *= p2->getFreezeDmgMultiplier();
             float defMult  = p1->getDefenseMultiplier(p2->getWeaponType());
             float finalDmg = baseDmg * defMult;
@@ -76,6 +77,10 @@ void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p)
         e->onCollideWithPlayer();
 
         float rawDmg   = e->getDamage(p->getId());
+        if (p->isFrozen()) {
+            qDebug()<<"using frozenbonus";
+            rawDmg *= e->frozenBonus; // 如果玩家被定身，先乘以实体的定身伤害加成
+        }
         float defMult  = p->getDefenseMultiplier(e->getWeaponType());
         float finalDmg = rawDmg * defMult;
 

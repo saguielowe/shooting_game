@@ -29,15 +29,13 @@ enum class ModifierType {
     // ── 定身法专属词条 ────────────────────────────────────
     FREEZE_DURATION_UP,         // 增加定身持续时间（+2s/级）
     FREEZE_DAMAGE_UP,           // 增加定身时造成的伤害（+20%/级）
-    FREEZE_STUN_UP,             // 定身破碎后硬直时间（+0.5s/级）
     FREEZE_BREAK_CDR,           // 定身破碎后减少冷却（-5s，唯一）
 
     // ── 隐身法专属词条 ────────────────────────────────────
     STEALTH_DURATION_UP,        // 增加隐身持续时间（+2s/级）
     STEALTH_SPEED_UP,           // 隐身时移动速度（+20%/级）
-    STEALTH_DAMAGE_REDUCTION,   // 隐身时伤害减免（+20%/级，上限100%）
-    STEALTH_DAMAGE_UP,          // 隐身时伤害加成（+20%/级）
-    STEALTH_REGEN,              // 隐身时缓慢回血（+1点/秒/级）
+    STEALTH_REGEN,              // 隐身时缓慢回血（+2点/秒/级）
+    STEALTH_FIRST_HIT,          // 破影一击（唯一）
 
     // ── 安身法专属词条 ────────────────────────────────────
     BARRIER_DURATION_UP,        // 增加屏障持续时间（+5s/级）
@@ -62,6 +60,7 @@ inline bool isUniqueModifier(ModifierType t) {
     case ModifierType::CLONE_CAN_CAST_SPELL:
     case ModifierType::CLONE_DAMAGE_EXTEND:
     case ModifierType::FORBIDDEN_WORD:
+    case ModifierType::STEALTH_FIRST_HIT:
         return true;
     default:
         return false;
@@ -112,18 +111,17 @@ inline QVector<ModifierData> ModifierData::forSpell(const QString& spellName) {
         return {
             { ModifierType::FREEZE_DURATION_UP,  "长缚",     "增加定身持续时间 2秒" },
             { ModifierType::FREEZE_DAMAGE_UP,    "缚中伤",   "定身期间造成的伤害 +20%" },
-            { ModifierType::FREEZE_STUN_UP,      "碎身震",   "定身破碎后敌人硬直 +0.5秒" },
             { ModifierType::FREEZE_BREAK_CDR,    "破而后立", "定身破碎后减少冷却 5秒（唯一）" },
         };
     }
     if (spellName == "stealth") {
         return {
-            { ModifierType::STEALTH_DURATION_UP,       "长隐",     "增加隐身持续时间 2秒" },
-            { ModifierType::STEALTH_SPEED_UP,          "影疾",     "隐身时移动速度 +20%" },
-            { ModifierType::STEALTH_DAMAGE_REDUCTION,  "隐盾",     "隐身时伤害减免 +20%" },
-            { ModifierType::STEALTH_DAMAGE_UP,         "隐杀",     "隐身时造成的伤害 +20%" },
-            { ModifierType::STEALTH_REGEN,             "潜息",     "隐身时每秒回血 +1点" },
-        };
+                { ModifierType::STEALTH_DURATION_UP, "长隐",   "增加隐身持续时间 +2秒" },
+                { ModifierType::STEALTH_SPEED_UP,    "影疾",   "隐身时移动速度 +20%" },
+                { ModifierType::STEALTH_REGEN,       "潜息",   "隐身时每秒回血 +2点" },
+                { ModifierType::STEALTH_FIRST_HIT,   "破影一击",
+                 "隐身时长减半，但第一击伤害翻倍并解除隐身（唯一）" },
+                };
     }
     if (spellName == "barrier") {
         return {
