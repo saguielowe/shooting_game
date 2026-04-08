@@ -131,6 +131,20 @@ void SetupWidget::buildUI() {
 
     root->addWidget(spellBox);
 
+    endlessRules = new QTextEdit(this);
+    endlessRules->setReadOnly(true);
+    endlessRules->setFixedHeight(110);
+    endlessRules->setStyleSheet("background:#222; color:#ddd; border-radius:6px; padding:8px;");
+    endlessRules->setText(
+        "无尽模式规则：\n"
+        "1) 玩家死亡即结束，AI不会死亡。\n"
+        "2) AI每隔一段时间随机获得词条强化（不包含“厚积薄发”）。\n"
+        "3) 隐身法在无尽模式可用。\n"
+        "4) 结算会记录生存时间、局内时间和伤害统计。"
+    );
+    endlessRules->setVisible(false);
+    root->addWidget(endlessRules);
+
     // ---- 操作按钮 ----------------------------------------
     auto* btnLayout = new QHBoxLayout();
     btnBack = new QPushButton("返回", this);
@@ -163,35 +177,26 @@ void SetupWidget::onModeChanged(int id) {
     currentMode = static_cast<GameSession::Mode>(id);
     updateSpellOptions();
 
-    // 双人/无尽模式显示 P2 法术
+    // 双人模式显示 P2 法术
     bool showP2 = (currentMode == GameSession::Mode::PVP);
     labelSpellP2->setVisible(showP2);
     comboSpellP2->setVisible(showP2);
+    endlessRules->setVisible(currentMode == GameSession::Mode::ENDLESS);
 }
 
 void SetupWidget::updateSpellOptions() {
-    // 人机模式：隐身可用；双人/无尽模式：隐身不可用，强制改为无
+    // 当前所有模式都允许隐身，仅保留文本恢复逻辑
     auto filterStealth = [this](QComboBox* combo) {
         int stealthIdx = combo->findData(static_cast<int>(GameSession::Spell::STEALTH));
         if (stealthIdx < 0) return;
 
-        bool pvpOrEndless = (currentMode != GameSession::Mode::AI);
         // 用 setItemData 的 Qt::UserRole+1 标记是否禁用
         auto* model = qobject_cast<QStandardItemModel*>(combo->model());
         if (!model) return;
         auto* item = model->item(stealthIdx);
         if (!item) return;
-
-        if (pvpOrEndless) {
-            item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
-            item->setText("隐身（仅人机）");
-            // 如果当前选中的是隐身，重置为无
-            if (combo->currentData().toInt() == static_cast<int>(GameSession::Spell::STEALTH))
-                combo->setCurrentIndex(0);
-        } else {
-            item->setFlags(item->flags() | Qt::ItemIsEnabled);
-            item->setText("隐身");
-        }
+        item->setFlags(item->flags() | Qt::ItemIsEnabled);
+        item->setText("隐身");
     };
 
     filterStealth(comboSpellP1);

@@ -46,6 +46,7 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         if (cooldowns[key] > 0)
             cooldowns[key] = fmax(0, cooldowns[key] - player.lock()->dt);
     }
+    if (cooldowns["hurt"] <= 0.f) hurtPeakDamage = 0.f;
     if (player.lock()->spellState.isFrozen) {
         return;
     }
@@ -189,7 +190,27 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
     }
 
     // ── 普通受击：原有逻辑完全不变 ──────────────────────────
-    if (cooldowns["hurt"] != 0) return;
+    if (cooldowns["hurt"] != 0) {
+        float prevPeak = qMax(hurtPeakDamage, 0.f);
+        if (damage > prevPeak + 0.01f) {
+            float ratioPrev = prevPeak / player.lock()->maxHp;
+            float ratioNew  = damage / player.lock()->maxHp;
+            float stunPrev = qMin(2.24f * sqrtf(qMax(0.f, ratioPrev)), 1.8f);
+            float stunNew  = qMin(2.24f * sqrtf(qMax(0.f, ratioNew)), 1.8f);
+            float stunDiff = qMax(0.f, stunNew - stunPrev);
+            cooldowns["hurt"] = qMax(cooldowns["hurt"], qMin(cooldowns["hurt"] + stunDiff, 1.8f));
+
+            float overflow = damage - prevPeak;
+            player.lock()->hp -= overflow;
+            SoundManager::instance().play("hit", 0.35);
+            qDebug().noquote() << QString("[硬直溢出受击] P%1 | 增量:%2 | 新峰值:%3")
+                                      .arg(player.lock()->id + 1)
+                                      .arg(overflow, 0, 'f', 1)
+                                      .arg(damage, 0, 'f', 1);
+            hurtPeakDamage = damage;
+        }
+        return;
+    }
     if (damage < 1) return;
 
     if (player.lock()->armor == Player::ArmorType::chainmail) {
@@ -216,6 +237,7 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
                               .arg(player.lock()->hp - damage, 0, 'f', 1);
 
     player.lock()->hp -= damage;
+    hurtPeakDamage = damage;
     float ratio = damage / player.lock()->maxHp;      // 归一化到[0,1]
     if (ratio < 0.03f){
         player.lock()->state.moveState = "hurt";
@@ -245,6 +267,7 @@ Player::WeaponType PlayerController::getWeaponType(){
 
 void PlayerController::forceHurt(float stunTime, const QString& direction) {
     cooldowns["hurt"] = qMax(0.f, stunTime);
+    hurtPeakDamage = 0.f;
     player.lock()->state.shootState = false;
     if (direction == "left") {
         player.lock()->vx = 60;
@@ -262,6 +285,7 @@ void PlayerController::consumeIronBodyAndStun(const QString& direction, float st
     p->spellState.ironBodyActive = false;
     p->spellState.ironBodyRemain = 0.f;
     p->spellState.ironBodyCdrUsed = false;
+    hurtPeakDamage = 0.f;
     if (p->modifiers.ironBodyHardened) {
         p->selfvelocityratio = p->velocityratio * p->modifiers.moveSpeedMultiplier;
     }
@@ -273,6 +297,7 @@ void PlayerController::consumeIronBodyWithNormalHurt(float damageAfterDefense, c
     p->spellState.ironBodyActive = false;
     p->spellState.ironBodyRemain = 0.f;
     p->spellState.ironBodyCdrUsed = false;
+    hurtPeakDamage = 0.f;
     if (p->modifiers.ironBodyHardened) {
         p->selfvelocityratio = p->velocityratio * p->modifiers.moveSpeedMultiplier;
     }

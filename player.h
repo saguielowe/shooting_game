@@ -51,6 +51,7 @@ public:
     float vx = 0, vy = 0;
     float hp = maxHp;
     float maxHp;
+    bool endlessImmortal = false;
     int   maxBalls;
     int   maxBullets;
     int   maxSnipers;

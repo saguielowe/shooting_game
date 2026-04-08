@@ -241,6 +241,7 @@ void Player::draw(QPainter& painter) {
     }
 
     // ── 原有血条逻辑（不变）─────────────────────────────────
+    if (endlessImmortal) return;
     QRect backgroundRect(hitbox.left(), hitbox.top() - 20, 100, 15);
     painter.setBrush(Qt::gray);
     painter.drawRect(backgroundRect);
@@ -267,6 +268,7 @@ void Player::draw(QPainter& painter) {
 }
 
 bool Player::isDead() const{
+    if (endlessImmortal) return false;
     return hp<=0 ;
 }
 

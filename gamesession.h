@@ -67,9 +67,8 @@ struct GameSession {
         scoreP2 = 0;
     }
 
-    // 法术是否对该模式可用（隐身仅人机）
+    // 法术是否对该模式可用
     bool isSpellAvailable(Spell spell, Mode m) const {
-        if (spell == Spell::STEALTH && m != Mode::AI) return false;
         return true;
     }
 };

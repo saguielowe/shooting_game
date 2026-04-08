@@ -292,6 +292,8 @@ void Widget::initGame() {
         currentSession.maxSnipers,
         canHide, speedRatio
         );
+    p1->endlessImmortal = false;
+    p2->endlessImmortal = (currentSession.mode == GameSession::Mode::ENDLESS);
 
     auto c1 = std::make_shared<PlayerController>();
     auto c2 = std::make_shared<PlayerController>();
@@ -340,6 +342,8 @@ void Widget::initGame() {
     }
     m_gameTime          = 0.f;
     m_timeSinceLastDrop = 0.f;
+    m_endlessAiModifierTimer = 0.f;
+    cm.resetStats();
 
     qDebug() << "ai is ready";
 
@@ -512,16 +516,12 @@ void Widget::gameLoop() {
         spawnDrop(); // 每帧尝试生成掉落物
     }
     updateDrops(dt);
-    players.erase(std::remove_if(players.begin(), players.end(),
-                                 [](const std::shared_ptr<Player>& p) {
-                                     return p->isDead();
-                                 }), players.end());
-    controllers.erase(std::remove_if(controllers.begin(), controllers.end(),
-                                     [](const std::shared_ptr<PlayerController>& c) {
-                                         return c->isOrphaned();  // ✅ 玩家已被销毁
-                                     }), controllers.end());
-    if (players.length() < 2){
-        gameEnd(players[0]->id);
+    if (players[0]->isDead()) {
+        gameEnd(1);
+        return;
+    }
+    if (players[1]->isDead()) {
+        gameEnd(0);
         return;
     }
     players[0]->setDt(dt); // 万一卡顿根据真实帧数设置dt
@@ -693,6 +693,27 @@ Widget::~Widget()
 
 void Widget::gameEnd(int id)
 {
+    if (currentSession.mode == GameSession::Mode::ENDLESS && players.size() >= 2) {
+        currentSession.survivalTime = m_gameTime;
+        currentSession.totalDamageDealt =
+            cm.stats().byPlayerAndWeapon[0][0] + cm.stats().byPlayerAndWeapon[0][1] +
+            cm.stats().byPlayerAndWeapon[0][2] + cm.stats().byPlayerAndWeapon[0][3] +
+            cm.stats().byPlayerAndWeapon[0][4];
+        qDebug().noquote() << QString("[无尽结算] 生存:%1s 总伤害:%2")
+                                  .arg(currentSession.survivalTime, 0, 'f', 1)
+                                  .arg(currentSession.totalDamageDealt, 0, 'f', 1);
+        qDebug().noquote() << QString("[无尽结算] P1伤害 拳:%1 刀:%2 球:%3 步:%4 狙:%5")
+                                  .arg(cm.stats().byPlayerAndWeapon[0][0], 0, 'f', 1)
+                                  .arg(cm.stats().byPlayerAndWeapon[0][1], 0, 'f', 1)
+                                  .arg(cm.stats().byPlayerAndWeapon[0][2], 0, 'f', 1)
+                                  .arg(cm.stats().byPlayerAndWeapon[0][3], 0, 'f', 1)
+                                  .arg(cm.stats().byPlayerAndWeapon[0][4], 0, 'f', 1);
+        qDebug().noquote() << QString("[无尽结算] P2词条: %1")
+                                  .arg(players[1]->getModifierSummary().join(" | "));
+        qDebug().noquote() << QString("[无尽结算] P1词条: %1")
+                                  .arg(players[0]->getModifierSummary().join(" | "));
+        qDebug().noquote() << QString("[无尽结算] 游戏时间:%1s").arg(m_gameTime, 0, 'f', 1);
+    }
     // 1. 停掉计时器，断掉信号，避免旧逻辑还在跑
     if (timer) {
         timer->stop();

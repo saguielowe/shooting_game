@@ -63,6 +63,7 @@ signals:
 private:
     std::weak_ptr<Player> player;
     QMap <QString, float> cooldowns;
+    float hurtPeakDamage = 0.f; // 当前硬直链中已记录的最大单次伤害（护甲后）
     void applyMapCollision();
     std::shared_ptr<Player> getPlayer() {
         return player.lock();

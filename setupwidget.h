@@ -10,6 +10,7 @@
 #include <QSpinBox>
 #include <QComboBox>
 #include <QGroupBox>
+#include <QTextEdit>
 #include "gamesession.h"
 
 // ============================================================
@@ -61,6 +62,7 @@ private:
     // ---- 操作按钮 ----------------------------------------
     QPushButton*  btnStart;
     QPushButton*  btnBack;
+    QTextEdit*    endlessRules;
 
     // ---- 当前模式缓存 ------------------------------------
     GameSession::Mode currentMode = GameSession::Mode::AI;

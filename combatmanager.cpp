@@ -14,8 +14,25 @@ static QString weaponName(Player::WeaponType w) {
     }
     return "未知";
 }
+
+static int weaponIndex(Player::WeaponType w) {
+    switch (w) {
+    case Player::WeaponType::punch:  return 0;
+    case Player::WeaponType::knife:  return 1;
+    case Player::WeaponType::ball:   return 2;
+    case Player::WeaponType::rifle:  return 3;
+    case Player::WeaponType::sniper: return 4;
+    }
+    return 0;
+}
 // 添加一些音效；铜头铁臂法术（定身可破）；无尽模式制作
 CombatManager::CombatManager() {}
+
+void CombatManager::recordDamage(int attackerId, Player::WeaponType weapon, float damage) {
+    if (attackerId < 0 || attackerId > 1) return;
+    if (damage <= 0.f) return;
+    m_stats.byPlayerAndWeapon[attackerId][weaponIndex(weapon)] += damage;
+}
 
 void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerController *p2)
 {
@@ -70,6 +87,7 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
                                           .arg(p2->getId() + 1);
             } else {
                 p2->receiveHit(finalDmg, p1->getWeaponType(), dirToP1);
+                recordDamage(p1->getId(), p1->getWeaponType(), finalDmg);
             }
             }
         }
@@ -113,6 +131,7 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
                                           .arg(p1->getId() + 1);
             } else {
                 p1->receiveHit(finalDmg, p2->getWeaponType(), dirToP2);
+                recordDamage(p2->getId(), p2->getWeaponType(), finalDmg);
             }
             }
         }
@@ -198,5 +217,7 @@ void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p)
         }
 
         p->receiveHit(finalDmg, e->getWeaponType(), dir);
+        int attackerId = e->parentId;
+        recordDamage(attackerId, e->getWeaponType(), finalDmg);
     }
 }
