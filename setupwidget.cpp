@@ -105,13 +105,12 @@ void SetupWidget::buildUI() {
             "QComboBox { background: #444; color: white; border-radius: 6px; padding: 4px; }"
             "QComboBox QAbstractItemView { background: #333; color: white; }"
         );
-        combo->addItem("无法术",  static_cast<int>(GameSession::Spell::NONE));
         combo->addItem("定身",    static_cast<int>(GameSession::Spell::FREEZE));
         combo->addItem("隐身",    static_cast<int>(GameSession::Spell::STEALTH));
-        combo->addItem("安身法",  static_cast<int>(GameSession::Spell::BARRIER));
+//        combo->addItem("安身法",  static_cast<int>(GameSession::Spell::BARRIER));
         combo->addItem("铜头铁臂",static_cast<int>(GameSession::Spell::IRON_BODY));
-        combo->addItem("身外身法",static_cast<int>(GameSession::Spell::CLONE));
-        combo->addItem("禁字法",  static_cast<int>(GameSession::Spell::FORBIDDEN));
+//        combo->addItem("身外身法",static_cast<int>(GameSession::Spell::CLONE));
+        combo->addItem("无法术",  static_cast<int>(GameSession::Spell::NONE));
         return combo;
     };
 

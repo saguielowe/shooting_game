@@ -925,9 +925,6 @@ void GameAI::handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackInt
         // 还没到最后已知位置，继续走过去
         executeMoveTo(m_lastKnownTargetPos, moveIntent, 40.f);
     } else {
-        // 到了还没找到，随机游走
-        moveIntent = (m_dis(m_gen) > 0.5)
-                         ? MoveIntent::MOVING_LEFT
-                         : MoveIntent::MOVING_RIGHT;
+        executeAttack(moveIntent, attackIntent);
     }
 }

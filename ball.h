@@ -9,6 +9,7 @@ public:
     void draw(QPainter &painter) override;
     void onCollideWithPlayer() override;
     float getDamage(int id) override;
+    void reflectByIronBody(float speedScale, int newParentId);
     Player::WeaponType getWeaponType() override { return Player::WeaponType::ball; }
     QRect hitbox() override;
     bool shouldBeRemoved() override;

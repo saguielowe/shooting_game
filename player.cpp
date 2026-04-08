@@ -1,5 +1,6 @@
 #include "player.h"
 #include <QDebug>
+#include <QtMath>
 Player::Player(float x, float y, int id,
                float initMaxHp, int initMaxBalls,
                int initMaxBullets, int initMaxSnipers,
@@ -173,12 +174,30 @@ void Player::draw(QPainter& painter) {
     else if (weapon == WeaponType::sniper) animation.loadWeapon("sniper");
     else if (weapon == WeaponType::punch)  animation.loadWeapon("no_weapon");
 
+    // ── 铜头铁臂：人物金属化叠色（不画矩形）──────────────────
+    bool isIronBody = spellState.ironBodyActive;
+    if (isIronBody) {
+        painter.save();
+    }
+
     // ── 原有动画绘制（不变）─────────────────────────────────
     bool armed = (state.moveState == "null") && (!state.shootState);
     if (direction)
         animation.draw(painter, x, y, false, armed);
     else
         animation.draw(painter, x, y, true, armed);
+
+    if (isIronBody) {
+        float pulse = 0.65f + 0.35f * qSin(spellState.ironBodyRemain * 12.f);
+        QColor metalTint(255, 200, 90, int(70 + 80 * pulse));
+        painter.setCompositionMode(QPainter::CompositionMode_Screen);
+        painter.setOpacity(0.75);
+        if (direction)
+            animation.draw(painter, x, y, false, armed);
+        else
+            animation.draw(painter, x, y, true, armed);
+        painter.restore();
+    }
 
     // ── 隐身恢复透明度 ───────────────────────────────────────
     if (isStealthed) {
@@ -339,6 +358,20 @@ void Player::applyModifier(const ModifierData& mod) {
         break;
     case ModifierType::BARRIER_REDUCTION_UP:
         modifiers.barrierDmgReduction = qMin(1.0f, modifiers.barrierDmgReduction + 0.2f);
+        break;
+
+    // ── 铜头铁臂词条 ────────────────────────────────────────
+    case ModifierType::IRON_BODY_DURATION_UP:
+        modifiers.ironBodyDurationBonus += 1.f;
+        break;
+    case ModifierType::IRON_BODY_REFLECT_CDR:
+        modifiers.ironBodyReflectCDR = true;
+        break;
+    case ModifierType::IRON_BODY_THORNS:
+        modifiers.ironBodyThorns = true;
+        break;
+    case ModifierType::IRON_BODY_HARDENED:
+        modifiers.ironBodyHardened = true;
         break;
 
     // ── 身外身词条 ────────────────────────────────────────
@@ -571,6 +604,16 @@ QStringList Player::getModifierSummary() const {
         lines << QString("屏障回血 %1/s").arg(int(m.barrierRegenPerSec));
     if (m.barrierDmgReduction != 0.2f)
         lines << QString("屏障减伤 %1%").arg(int(m.barrierDmgReduction * 100));
+
+    // ── 铜头词条 ────────────────────────────────────────────
+    if (m.ironBodyDurationBonus > 0.f)
+        lines << QString("铜头时长 +%1s").arg(int(m.ironBodyDurationBonus));
+    if (m.ironBodyReflectCDR)
+        lines << "弹反减CD";
+    if (m.ironBodyThorns)
+        lines << "荆棘";
+    if (m.ironBodyHardened)
+        lines << "硬化";
 
     // ── 克隆词条 ──────────────────────────────────────────
     if (m.cloneCanCastSpell)

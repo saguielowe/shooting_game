@@ -19,6 +19,7 @@ public:
     void receiveHit(float damage, Player::WeaponType weaponType, QString direction);
     QRect getHitbox();
     bool canAttack() const { return player.lock()->state.shootState; }
+    void clearAttackState() { player.lock()->state.shootState = false; }
     void triggerAttackCooldown(float time=1) { cooldowns["attack"] = time; }
     int getId() { return player.lock()->id; }
     Player::WeaponType getWeaponType();
@@ -28,6 +29,13 @@ public:
     float getDefenseMultiplier(Player::WeaponType weaponType) const{
         return player.lock()->getDefenseMultiplier(weaponType);
     }
+    void forceHurt(float stunTime, const QString& direction);
+    void consumeIronBodyAndStun(const QString& direction, float stunTime = 1.0f);
+    void consumeIronBodyWithNormalHurt(float damageAfterDefense, const QString& direction);
+    void reduceSpellCooldown(float sec);
+    bool hasUsedIronBodyReflectCdr() const;
+    void markIronBodyReflectCdrUsed();
+    void takeReflectDamage(float damage);
     bool isInHurt() const { return cooldowns.value("hurt", 0) > 0; }
     bool  isFrozen()            const { return player.lock()->spellState.isFrozen; }
     float getFreezeDmgMultiplier() const {

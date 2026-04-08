@@ -18,7 +18,7 @@ void Bullet::draw(QPainter& painter) {
 
 void Bullet::update(){
     //applyGravity(); 重力对子弹来说太大，影响弹道
-    stop();
+    // 反弹后也保持子弹线性飞行，避免被阻力拖停在空中
     position += velocity * dt;
     lifetime += dt;
     if (position.x() > 2000 || position.x() < -100){
@@ -40,6 +40,14 @@ float Bullet::getDamage(int id){
     else if (type == 2){
         return basicDamage * 60; // 狙击枪基础伤害60
     }
+    return 0.f;
+}
+
+void Bullet::reflectByIronBody(float speedScale, float damageScale, int newParentId) {
+    velocity *= -speedScale;
+    basicDamage *= damageScale;
+    parentId = newParentId;
+    toBeRemoved = false;
 }
 
 bool Bullet::shouldBeRemoved(){

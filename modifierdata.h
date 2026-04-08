@@ -48,6 +48,12 @@ enum class ModifierType {
     CLONE_DURATION_UP,          // 克隆体持续时间（+5s/级）
     CLONE_DAMAGE_EXTEND,        // 按造成伤害等比延长持续时间（唯一）
 
+    // ── 铜头铁臂专属词条 ──────────────────────────────────
+    IRON_BODY_DURATION_UP,      // 铜头持续时间（+1s/级）
+    IRON_BODY_REFLECT_CDR,      // 成功弹反减CD（唯一）
+    IRON_BODY_THORNS,           // 近战弹反反伤50%攻击伤害（唯一）
+    IRON_BODY_HARDENED,         // 铜头激活时移速+30%（唯一）
+
     // ── 禁字法专属（占位，禁字法本身在GameSession处理）──
     FORBIDDEN_WORD,             // 放弃所有法术，+100%伤害加成（唯一）
 };
@@ -61,6 +67,9 @@ inline bool isUniqueModifier(ModifierType t) {
     case ModifierType::CLONE_DAMAGE_EXTEND:
     case ModifierType::FORBIDDEN_WORD:
     case ModifierType::STEALTH_FIRST_HIT:
+    case ModifierType::IRON_BODY_REFLECT_CDR:
+    case ModifierType::IRON_BODY_THORNS:
+    case ModifierType::IRON_BODY_HARDENED:
         return true;
     default:
         return false;
@@ -138,7 +147,15 @@ inline QVector<ModifierData> ModifierData::forSpell(const QString& spellName) {
             { ModifierType::CLONE_DAMAGE_EXTEND,   "以伤续命", "按造成伤害等比延长持续时间（唯一）" },
         };
     }
-    // iron_body / forbidden：暂无专属词条，后续填充
+    if (spellName == "iron_body") {
+        return {
+            { ModifierType::IRON_BODY_DURATION_UP, "铜骨",   "铜头铁臂持续时间 +1秒" },
+            { ModifierType::IRON_BODY_REFLECT_CDR, "越战越勇", "铜头期间成功弹反一次，法术CD -5秒（每次激活仅生效一次，唯一）" },
+            { ModifierType::IRON_BODY_THORNS,      "荆棘",   "弹反近战时，攻击者额外受到其攻击伤害50%（唯一）" },
+            { ModifierType::IRON_BODY_HARDENED,    "硬化",   "铜头激活时移动速度 +30%（唯一）" },
+        };
+    }
+    // forbidden：暂无专属词条，后续填充
     return {};
 }
 

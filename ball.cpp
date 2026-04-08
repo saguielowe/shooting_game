@@ -85,6 +85,13 @@ float Ball::getDamage(int id) {
     return qMax(0.f, damage);
 }
 
+void Ball::reflectByIronBody(float speedScale, int newParentId) {
+    velocity *= -speedScale;
+    parentId = newParentId;
+    parentImmunityTime = 0.f;
+    hitCooldowns.clear();
+}
+
 void Ball::onCollideWithPlayer() {
     if (lifetime >= 1) basicDamage /= 1.5f;
 }

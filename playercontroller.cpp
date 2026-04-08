@@ -176,7 +176,7 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
             player.lock()->state.moveState = "hurt";
             player.lock()->update();
 
-            SoundManager::instance().play("freeze_break", 0.7);
+            SoundManager::instance().play("frozen", 0.7);
 
             qDebug().noquote() << QString("[定身破除] P%1 | 硬直:%.2fs")
                                       .arg(player.lock()->id + 1)
@@ -241,4 +241,85 @@ QRect PlayerController::getHitbox(){
 
 Player::WeaponType PlayerController::getWeaponType(){
     return player.lock()->weapon;
+}
+
+void PlayerController::forceHurt(float stunTime, const QString& direction) {
+    cooldowns["hurt"] = qMax(0.f, stunTime);
+    player.lock()->state.shootState = false;
+    if (direction == "left") {
+        player.lock()->vx = 60;
+        player.lock()->vy = -300;
+    } else {
+        player.lock()->vx = -60;
+        player.lock()->vy = -300;
+    }
+    player.lock()->state.moveState = "hurt";
+    player.lock()->update();
+}
+
+void PlayerController::consumeIronBodyAndStun(const QString& direction, float stunTime) {
+    auto p = player.lock();
+    p->spellState.ironBodyActive = false;
+    p->spellState.ironBodyRemain = 0.f;
+    p->spellState.ironBodyCdrUsed = false;
+    if (p->modifiers.ironBodyHardened) {
+        p->selfvelocityratio = p->velocityratio * p->modifiers.moveSpeedMultiplier;
+    }
+    forceHurt(stunTime, direction);
+}
+
+void PlayerController::consumeIronBodyWithNormalHurt(float damageAfterDefense, const QString& direction) {
+    auto p = player.lock();
+    p->spellState.ironBodyActive = false;
+    p->spellState.ironBodyRemain = 0.f;
+    p->spellState.ironBodyCdrUsed = false;
+    if (p->modifiers.ironBodyHardened) {
+        p->selfvelocityratio = p->velocityratio * p->modifiers.moveSpeedMultiplier;
+    }
+    if (cooldowns["hurt"] != 0 || damageAfterDefense < 1.f) return;
+
+    float ratio = damageAfterDefense / p->maxHp;
+    if (ratio < 0.03f) {
+        p->state.moveState = "hurt";
+        p->update();
+        return;
+    }
+    float stun = 2.24f * sqrtf(ratio);
+    cooldowns["hurt"] = qMin(stun, 1.8f);
+    if (direction == "left") {
+        p->vx = 60;
+        p->vy = -400 * fmin(1.f, damageAfterDefense / 20.f);
+    } else {
+        p->vx = -60;
+        p->vy = -400 * fmin(1.f, damageAfterDefense / 20.f);
+    }
+    p->state.moveState = "hurt";
+    p->update();
+}
+
+void PlayerController::reduceSpellCooldown(float sec) {
+    auto p = player.lock();
+    p->spellState.cooldownRemain = qMax(0.f, p->spellState.cooldownRemain - sec);
+}
+
+bool PlayerController::hasUsedIronBodyReflectCdr() const {
+    return player.lock()->spellState.ironBodyCdrUsed;
+}
+
+void PlayerController::markIronBodyReflectCdrUsed() {
+    player.lock()->spellState.ironBodyCdrUsed = true;
+}
+
+void PlayerController::takeReflectDamage(float damage) {
+    auto p = player.lock();
+    if (damage <= 0.f) return;
+    if (damage >= 1.f) {
+        qDebug().noquote() << QString("[弹反受击] P%1 | 反伤:%2 | HP:%3 → %4")
+                                  .arg(p->id + 1)
+                                  .arg(damage, 0, 'f', 1)
+                                  .arg(p->hp, 0, 'f', 1)
+                                  .arg(p->hp - damage, 0, 'f', 1);
+    }
+    p->hp -= damage;
+    SoundManager::instance().play("hit", 0.35);
 }

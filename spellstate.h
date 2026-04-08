@@ -29,6 +29,7 @@ struct SpellState {
 
     bool  ironBodyActive = false;
     float ironBodyRemain = 0.f;
+    bool  ironBodyCdrUsed = false;
 
     bool  cloneActive    = false;
     float cloneRemain    = 0.f;

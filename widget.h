@@ -59,6 +59,8 @@ private:
     void gameEnd(int id);
     void updateIntents();
     void triggerModifierChoice(int player);
+    QVector<ModifierData> filteredModifierPoolForPlayer(int playerIndex, bool excludeMaxHpUp) const;
+    void applyRandomModifierToAI();
     void onModifierChosen(const ModifierData& chosen);
     void tryActivateSpell(int playerIndex);
     void tickSpells(float dt);
@@ -85,6 +87,8 @@ private:
     float m_gameTime        = 0.f;  // 当前局内时间（秒）
     float m_timeSinceLastDrop = 0.f; // 距上次掉落经过的时间
     static const float DROP_GUARANTEE_TIME; // 保底时间，20秒
+    static const float ENDLESS_AI_MODIFIER_INTERVAL;
+    float m_endlessAiModifierTimer = 0.f;
     CombatManager cm;
 
     QString currentScene;

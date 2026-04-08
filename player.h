@@ -101,6 +101,11 @@ public:
         float barrierRegenPerSec    = 1.0f; // 基础1点/秒
         float barrierDmgReduction   = 0.2f; // 基础20%
 
+        float ironBodyDurationBonus = 0.f;
+        bool  ironBodyReflectCDR    = false;
+        bool  ironBodyThorns        = false;
+        bool  ironBodyHardened      = false;
+
         bool  cloneCanCastSpell     = false;
         float cloneDmgMultiplier    = 1.0f;
         float cloneDurationBonus    = 0.f;
