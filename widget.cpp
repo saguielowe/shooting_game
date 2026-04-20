@@ -120,6 +120,9 @@ Widget::Widget(const GameSession& session, QWidget *parent)
     modifierOverlay = new ModifierOverlay(this);
     connect(modifierOverlay, &ModifierOverlay::optionChosen,
             this, &Widget::onModifierChosen);
+    
+    endlessResultWidget = new EndlessResultWidget(this);
+    
     ui->setupUi(this);
 }
  
@@ -368,13 +371,15 @@ void Widget::showMatchResult(const QString& text) {
     overlay->show();
 
     grabKeyboard();
-    connect(this, &Widget::keyPressed, this, [=]() {
+    connect(this, &Widget::keyPressed, overlay, [=]() {
+        disconnect(this, &Widget::keyPressed, overlay, nullptr);
         releaseKeyboard();
         overlay->hide();
+        overlay->deleteLater();
         QTimer::singleShot(0, this, [=]() {
             emit matchResultConfirmed();  // 新信号，玩家按键确认后
         });
-    }, Qt::SingleShotConnection);
+    });
 }
 
 void Widget::cleanupGame() {
@@ -643,7 +648,6 @@ void Widget::spawnDrop() {
 void Widget::updateDrops(float dt){
     for (auto& drop : drops) {
         if (drop.lock() == nullptr){
-            qDebug() <<"here is a fucking nullptr";
             return;
         }
         if (drop.lock()->isCollectedBy(players[0].get()) && intent[0].moveIntent == MoveIntent::CROUCH) {
@@ -698,22 +702,87 @@ void Widget::gameEnd(int id)
         currentSession.totalDamageDealt =
             cm.stats().byPlayerAndWeapon[0][0] + cm.stats().byPlayerAndWeapon[0][1] +
             cm.stats().byPlayerAndWeapon[0][2] + cm.stats().byPlayerAndWeapon[0][3] +
-            cm.stats().byPlayerAndWeapon[0][4];
+            cm.stats().byPlayerAndWeapon[0][4] + cm.stats().byPlayerAndWeapon[0][5];
         qDebug().noquote() << QString("[无尽结算] 生存:%1s 总伤害:%2")
                                   .arg(currentSession.survivalTime, 0, 'f', 1)
                                   .arg(currentSession.totalDamageDealt, 0, 'f', 1);
-        qDebug().noquote() << QString("[无尽结算] P1伤害 拳:%1 刀:%2 球:%3 步:%4 狙:%5")
+        qDebug().noquote() << QString("[无尽结算] P1伤害 拳:%1 刀:%2 球:%3 步:%4 狙:%5 其他:%6")
                                   .arg(cm.stats().byPlayerAndWeapon[0][0], 0, 'f', 1)
                                   .arg(cm.stats().byPlayerAndWeapon[0][1], 0, 'f', 1)
                                   .arg(cm.stats().byPlayerAndWeapon[0][2], 0, 'f', 1)
                                   .arg(cm.stats().byPlayerAndWeapon[0][3], 0, 'f', 1)
-                                  .arg(cm.stats().byPlayerAndWeapon[0][4], 0, 'f', 1);
+                                  .arg(cm.stats().byPlayerAndWeapon[0][4], 0, 'f', 1)
+                                  .arg(cm.stats().byPlayerAndWeapon[0][5], 0, 'f', 1);
         qDebug().noquote() << QString("[无尽结算] P2词条: %1")
                                   .arg(players[1]->getModifierSummary().join(" | "));
         qDebug().noquote() << QString("[无尽结算] P1词条: %1")
                                   .arg(players[0]->getModifierSummary().join(" | "));
         qDebug().noquote() << QString("[无尽结算] 游戏时间:%1s").arg(m_gameTime, 0, 'f', 1);
+        
+        // 构建结算数据并显示UI
+        EndlessGameResult result;
+        result.survivalTime = currentSession.survivalTime;
+        result.totalDamage = currentSession.totalDamageDealt;
+        result.spellPlayer1 = spellName(currentSession.spellP1);
+        result.spellPlayer2 = spellName(currentSession.spellP2);
+        
+        // 复制伤害分布
+        for (int i = 0; i < 6; ++i) {
+            result.damageByWeapon[0][i] = cm.stats().byPlayerAndWeapon[0][i];
+            result.damageByWeapon[1][i] = cm.stats().byPlayerAndWeapon[1][i];
+        }
+        
+        // 获取词条摘要
+        result.modifiersPlayer1 = players[0]->getModifierSummary();
+        result.modifiersPlayer2 = players[1]->getModifierSummary();
+        
+        // 先判定是否破纪录，再写入记录，避免比较基准被刚写入的新值覆盖
+        result.isNewRecord = recordManager.isNewRecord(result.survivalTime, result.totalDamage);
+        recordManager.updateIfBetter(result.survivalTime, result.totalDamage);
+        const EndlessRecord& record = recordManager.getRecord();
+        result.bestSurvivalTime = record.maxSurvivalTime;
+        result.bestTotalDamage = record.maxTotalDamage;
+        
+        if (result.isNewRecord) {
+            qDebug() << "[无尽结算] 🎉 新纪录！生存:" << result.survivalTime 
+                     << "秒，伤害:" << result.totalDamage;
+        }
+        
+        // 停掉计时器
+        if (timer) {
+            timer->stop();
+            disconnect(timer, nullptr, this, nullptr);
+        }
+        
+        // 抢键盘焦点
+        grabKeyboard();
+        
+        // 显示结算UI
+        endlessResultWidget->showResult(result);
+
+        // 防止多次结束时重复连接
+        disconnect(endlessResultWidget, nullptr, this, nullptr);
+        
+        // 连接按钮信号到重新开始/返回菜单
+        connect(endlessResultWidget, &EndlessResultWidget::restartRequested, this, [=]() {
+            releaseKeyboard();
+            disconnect(endlessResultWidget, nullptr, this, nullptr);
+            endlessResultWidget->hide();
+            resetGame(currentSession);
+            setFocus();
+        });
+        
+        connect(endlessResultWidget, &EndlessResultWidget::menuRequested, this, [=]() {
+            releaseKeyboard();
+            disconnect(endlessResultWidget, nullptr, this, nullptr);
+            endlessResultWidget->hide();
+            emit matchResultConfirmed();  // 返回菜单
+        });
+        
+        return;
     }
+    
+    // 非无尽模式流程：显示原有的Game Over界面
     // 1. 停掉计时器，断掉信号，避免旧逻辑还在跑
     if (timer) {
         timer->stop();
@@ -748,7 +817,7 @@ void Widget::gameEnd(int id)
         QTimer::singleShot(0, this, [=]() {
             emit roundEnded(id);
         });
-    }, Qt::SingleShotConnection);
+    });
 }
 
 void Widget::onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, float frozenBonus, int id) {

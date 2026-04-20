@@ -25,6 +25,10 @@ static int weaponIndex(Player::WeaponType w) {
     }
     return 0;
 }
+
+static int otherIndex() {
+    return 5;
+}
 // 添加一些音效；铜头铁臂法术（定身可破）；无尽模式制作
 CombatManager::CombatManager() {}
 
@@ -32,6 +36,12 @@ void CombatManager::recordDamage(int attackerId, Player::WeaponType weapon, floa
     if (attackerId < 0 || attackerId > 1) return;
     if (damage <= 0.f) return;
     m_stats.byPlayerAndWeapon[attackerId][weaponIndex(weapon)] += damage;
+}
+
+void CombatManager::recordOtherDamage(int attackerId, float damage) {
+    if (attackerId < 0 || attackerId > 1) return;
+    if (damage <= 0.f) return;
+    m_stats.byPlayerAndWeapon[attackerId][otherIndex()] += damage;
 }
 
 void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerController *p2)
@@ -62,6 +72,7 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
                 }
                 if (p2->getModifiers().ironBodyThorns) {
                     p1->takeReflectDamage(meleeIncoming * 0.5f);
+                    recordOtherDamage(p2->getId(), meleeIncoming * 0.5f);
                 }
                 SoundManager::instance().play("tanfan", 0.7);
                 qDebug().noquote() << QString("[铜头铁臂] 近战反制 P%1 被硬直")
@@ -106,6 +117,7 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
                 }
                 if (p1->getModifiers().ironBodyThorns) {
                     p2->takeReflectDamage(meleeIncoming * 0.5f);
+                    recordOtherDamage(p1->getId(), meleeIncoming * 0.5f);
                 }
                 SoundManager::instance().play("tanfan", 0.7);
                 qDebug().noquote() << QString("[铜头铁臂] 近战反制 P%1 被硬直")

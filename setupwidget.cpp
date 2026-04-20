@@ -50,9 +50,9 @@ void SetupWidget::buildUI() {
     root->addWidget(modeBox);
 
     // ---- 局数选择 ----------------------------------------
-    auto* boBox = new QGroupBox("局数", this);
-    boBox->setStyleSheet("QGroupBox { color: white; font-size: 14px; }");
-    auto* boLayout = new QHBoxLayout(boBox);
+    bestOfBox = new QGroupBox("局数", this);
+    bestOfBox->setStyleSheet("QGroupBox { color: white; font-size: 14px; }");
+    auto* boLayout = new QHBoxLayout(bestOfBox);
 
     bestOfGroup = new QButtonGroup(this);
     btnBO1 = new QPushButton("BO1", this);
@@ -91,7 +91,7 @@ void SetupWidget::buildUI() {
     });
     boLayout->addWidget(spinCustom);
 
-    root->addWidget(boBox);
+    root->addWidget(bestOfBox);
 
     // ---- 法术选择 ----------------------------------------
     auto* spellBox = new QGroupBox("法术选择", this);
@@ -144,6 +144,16 @@ void SetupWidget::buildUI() {
     );
     endlessRules->setVisible(false);
     root->addWidget(endlessRules);
+    
+    // 无尽模式最佳纪录显示
+    labelBestRecord = new QLabel(this);
+    labelBestRecord->setAlignment(Qt::AlignCenter);
+    labelBestRecord->setStyleSheet(
+        "color: rgb(255,215,0); font-size: 14px; font-weight: bold; "
+        "background: rgba(40,40,70,200); border-radius: 6px; padding: 8px;"
+    );
+    labelBestRecord->setVisible(false);
+    root->addWidget(labelBestRecord);
 
     // ---- 操作按钮 ----------------------------------------
     auto* btnLayout = new QHBoxLayout();
@@ -182,6 +192,29 @@ void SetupWidget::onModeChanged(int id) {
     labelSpellP2->setVisible(showP2);
     comboSpellP2->setVisible(showP2);
     endlessRules->setVisible(currentMode == GameSession::Mode::ENDLESS);
+    bestOfBox->setVisible(currentMode != GameSession::Mode::ENDLESS);
+    
+    // 无尽模式显示最佳纪录
+    if (currentMode == GameSession::Mode::ENDLESS) {
+        refreshEndlessRecordDisplay();
+    } else {
+        labelBestRecord->setVisible(false);
+    }
+}
+
+void SetupWidget::refreshEndlessRecordDisplay() {
+    recordManager.load();
+    const EndlessRecord& record = recordManager.getRecord();
+    if (record.maxSurvivalTime > 0 || record.maxTotalDamage > 0) {
+        labelBestRecord->setText(
+            QString("最佳纪录：%1 秒 | 伤害 %2")
+                .arg(record.maxSurvivalTime, 0, 'f', 1)
+                .arg(record.maxTotalDamage, 0, 'f', 1)
+        );
+    } else {
+        labelBestRecord->setText("暂无纪录");
+    }
+    labelBestRecord->setVisible(currentMode == GameSession::Mode::ENDLESS);
 }
 
 void SetupWidget::updateSpellOptions() {
@@ -213,7 +246,9 @@ GameSession SetupWidget::buildSession() const {
     s.mode = currentMode;
 
     // 局数：优先用预设按钮，没有选中则用 spinbox
-    if (auto* checked = bestOfGroup->checkedButton()) {
+    if (currentMode == GameSession::Mode::ENDLESS) {
+        s.bestOf = 1;
+    } else if (auto* checked = bestOfGroup->checkedButton()) {
         s.bestOf = bestOfGroup->id(checked);
     } else {
         s.bestOf = spinCustom->value();

@@ -12,6 +12,7 @@
 #include <QGroupBox>
 #include <QTextEdit>
 #include "gamesession.h"
+#include "endlessrecordmanager.h"
 
 // ============================================================
 //  SetupWidget — 开局配置页面（嵌在 QStackedWidget 里）
@@ -36,6 +37,9 @@ private slots:
     void onModeChanged(int id);   // 模式切换时更新法术可选项
     void onStartClicked();
 
+public slots:
+    void refreshEndlessRecordDisplay();
+
 private:
     void buildUI();
     void updateSpellOptions();    // 根据模式过滤法术列表
@@ -48,6 +52,7 @@ private:
 
     // ---- 局数选择 ----------------------------------------
     QButtonGroup* bestOfGroup;
+    QGroupBox*    bestOfBox;
     QPushButton*  btnBO1;
     QPushButton*  btnBO3;
     QPushButton*  btnBO5;
@@ -63,9 +68,13 @@ private:
     QPushButton*  btnStart;
     QPushButton*  btnBack;
     QTextEdit*    endlessRules;
+    QLabel*       labelBestRecord;   // 无尽模式最佳纪录显示
 
     // ---- 当前模式缓存 ------------------------------------
     GameSession::Mode currentMode = GameSession::Mode::AI;
+    
+    // ---- 成绩管理 ----------------------------------------
+    EndlessRecordManager recordManager;
 };
 
 #endif // SETUPWIDGET_H

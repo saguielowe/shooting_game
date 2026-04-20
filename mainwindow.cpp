@@ -103,6 +103,9 @@ void MainWindow::goToSetup() {
 
 void MainWindow::goToMenu() {
     stack->setCurrentIndex(PAGE_MENU);
+    if (setupPage != nullptr) {
+        setupPage->refreshEndlessRecordDisplay();
+    }
 }
 
 // ============================================================
@@ -125,6 +128,8 @@ void MainWindow::onSessionReady(GameSession s) {
         // 连接局结束信号
         connect(gamePage, &Widget::roundEnded,
                 this, &MainWindow::onRoundEnd);
+        connect(gamePage, &Widget::matchResultConfirmed,
+            this, &MainWindow::goToMenu);
     } else {
         // 已有 GameWidget，直接 reset
         gamePage->resetGame(session);
@@ -173,11 +178,4 @@ void MainWindow::showResult() {
                        .arg(session.scoreP2);
 
     gamePage->showMatchResult(text);
-
-    // 一次性连接，玩家按键后弹出菜单选择
-    connect(gamePage, &Widget::matchResultConfirmed,
-            this, [=]() {
-        // 简单处理：直接回菜单，后续可以加"再来一局"逻辑
-        goToMenu();
-    }, Qt::SingleShotConnection);
 }

@@ -17,6 +17,8 @@
 #include <QRandomGenerator>
 #include "gameai.h"
 #include "modifieroverlay.h"
+#include "endlessresultwidget.h"
+#include "endlessrecordmanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -67,6 +69,8 @@ private:
 
     GameSession currentSession;
     ModifierOverlay* modifierOverlay;   // 构造时 new 一次
+    EndlessResultWidget* endlessResultWidget; // 无尽模式结算UI
+    EndlessRecordManager recordManager;   // 无尽模式成绩管理
     int pendingModifierPlayer = -1;
     struct inputIntent {
         MoveIntent moveIntent;

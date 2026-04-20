@@ -7,7 +7,7 @@ class CombatManager
 {
 public:
     struct DamageStats {
-        float byPlayerAndWeapon[2][5] = { {0} };
+        float byPlayerAndWeapon[2][6] = { {0} };
     };
 
     CombatManager();
@@ -18,6 +18,7 @@ public:
 
 private:
     void recordDamage(int attackerId, Player::WeaponType weapon, float damage);
+    void recordOtherDamage(int attackerId, float damage);
     DamageStats m_stats;
 };
 
