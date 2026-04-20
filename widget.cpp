@@ -811,9 +811,11 @@ void Widget::gameEnd(int id)
     // 4. 抢键盘焦点，捕捉“任意键”
     grabKeyboard();
 
-    connect(this, &Widget::keyPressed, this, [=]() {
+    connect(this, &Widget::keyPressed, overlay, [=]() {
+        disconnect(this, &Widget::keyPressed, overlay, nullptr);
         releaseKeyboard();
         overlay->hide(); // 重新开始后遮罩解除
+        overlay->deleteLater();
         QTimer::singleShot(0, this, [=]() {
             emit roundEnded(id);
         });

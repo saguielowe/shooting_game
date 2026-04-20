@@ -373,6 +373,25 @@ AIState GameAI::determineNextState()
     auto targetPlayer = m_targetPlayer.lock();
     if (!aiPlayer || !targetPlayer) return AIState::FOLLOW;
 
+    const bool endlessMode = aiPlayer->endlessImmortal;
+
+    if (endlessMode) {
+        // 无尽模式下，AI不再过度偏防守：优先找武器和攻击，只有明显威胁时才闪避
+        if (shouldSeekWeapon()) {
+            return AIState::SEEK_WEAPON;
+        }
+        if (shouldSeekArmor()) {
+            return AIState::SEEK_ARMOR;
+        }
+        if (shouldSeekSupply()) {
+            return AIState::SEEK_SUPPLY;
+        }
+        if (shouldDodge()) {
+            return AIState::DODGE;
+        }
+        return AIState::ATTACK;
+    }
+
     QPointF aiPos = getPlayerPosition(aiPlayer);
     QPointF targetPos = getPlayerPosition(targetPlayer);
     float dist = distance(aiPos, targetPos);
