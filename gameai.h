@@ -59,11 +59,25 @@ class GameAI : public QObject
 
 public:
     explicit GameAI(QObject *parent = nullptr);
+     // AI 性格类型
+     enum class AIPersonality {
+          RUSH,       // 冲锋：激进攻击，优先高伤害修饰符
+          KITE,       // 风筝：保守远程，避免近战
+          SCAVENGER,  // 拾荒：均衡型，优先生存和补给
+          TRICKSTER   // 诡术：技巧型，法术和 CDR 优先
+     };
 
     // 主要接口：设置AI控制的玩家和目标玩家
     void setAIPlayer(const std::shared_ptr<Player>& aiPlayer) { m_aiPlayer = aiPlayer; }
     void setTargetPlayer(const std::shared_ptr<Player>& targetPlayer) { m_targetPlayer = targetPlayer; }
 
+        // 性格系统接口
+        void setPersonality(AIPersonality personality) { m_personality = personality; }
+        AIPersonality getPersonality() const { return m_personality; }
+        static AIPersonality randomPersonality() {
+            int p = QRandomGenerator::global()->bounded(4);
+            return static_cast<AIPersonality>(p);
+        }
     // 核心接口：更新AI意图
     void updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent);
 
@@ -139,21 +153,41 @@ public:
 private:
     QVector<DropInfo> m_availableDrops; // 缓存掉落物信息
     QString m_currentWeapon; // 当前武器类型
+    QVector<Player::WeaponType> m_weaponSlots; // 武器槽位列表缓存
+    int m_activeSlotIndex = 0; // 目标激活槽位（AI 想要切到的槽位）
+    int m_currentSlotIndex = 0; // 当前槽位（上一帧玩家的槽位）
+    int m_weaponSwitchCooldown = 0; // 切槽冷却计时器
     void executeMoveTo(QPointF target, MoveIntent& moveIntent, float stopDistance = 10.0f);
     QString getoutput(AIState state);
 public:
     void updateDropsInfo(const QVector<DropInfo>& drops) { m_availableDrops = drops; }
     void setCurrentWeapon(const QString& weapon) { m_currentWeapon = weapon; }
-        void setCurrentSpell(GameSession::Spell spell) { m_aiSpell = spell; }
-        bool consumeSpellCastIntent();
+    void updateWeaponSlotInfo(const QVector<Player::WeaponType>& slots, int activeIdx) {
+        m_weaponSlots = slots;
+        m_currentSlotIndex = activeIdx;  // 保存玩家当前的槽位，不覆盖 m_activeSlotIndex
+    }
+    
+    // 武器切槽意图消费函数
+    int consumeWeaponSwitchIntent() {
+        if (m_activeSlotIndex != m_currentSlotIndex) {
+            int target = m_activeSlotIndex;
+            m_currentSlotIndex = m_activeSlotIndex;  // 标记为已处理
+            return target;
+        }
+        return -1; // 不需要切槽
+    }
+    void setCurrentSpell(GameSession::Spell spell) { m_aiSpell = spell; }
+    bool consumeSpellCastIntent();
     // 在gameai.h中添加：
 private:
     bool isRangedWeapon(const QString& weaponType) const;
     void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
     float getRangedAttackDistance(const QString& weaponType) const;
     void handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent);
-        void updateSpellIntent();
-        bool shouldCastFreeze();
+    void updateSpellIntent();
+    bool shouldCastFreeze();
+    bool shouldSwitchWeapon();
+    int evaluateWeaponUtility(Player::WeaponType w) const;
 private:
     // 预定动作序列
     QQueue<MoveIntent> m_plannedMoves;     // 预定的动作队列
@@ -213,6 +247,9 @@ private:
     MoveIntent m_lastAttackMove;     // 上次攻击时的移动方向
     int m_attackMoveTimer;           // 攻击走位计时器
     float getAttackRange(std::shared_ptr<Player> player); // 获取攻击范围
+    
+        // 性格系统成员
+        AIPersonality m_personality = AIPersonality::RUSH; // 默认冲锋性格
 };
 
 #endif // GAMEAI_H

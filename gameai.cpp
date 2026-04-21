@@ -162,6 +162,14 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
 
     // 状态决策后再判断施法，避免与移动/攻击意图冲突。
     updateSpellIntent();
+
+    // 武器切槽决策（在状态决策后）
+    if (shouldSwitchWeapon()) {
+        moveIntent = MoveIntent::NONE;
+        attackIntent = false;
+        // 注意：实际切槽由Widget通过consumed signal触发
+        // 此处仅标记"需要切槽"，Widget端会调用player->switchWeaponSlot()
+    }
 }
 
 bool GameAI::consumeSpellCastIntent()
@@ -1006,4 +1014,181 @@ bool GameAI::shouldCastFreeze()
 
     score = qBound(0.1f, score, 0.85f);
     return m_dis(m_gen) < score;
+}
+
+// === 武器槽位系统 ===
+
+bool GameAI::shouldSwitchWeapon()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer || m_weaponSlots.isEmpty()) return false;
+
+    // 武器切槽冷却中，不切换
+    if (m_weaponSwitchCooldown > 0) {
+        m_weaponSwitchCooldown--;
+        return false;
+    }
+
+    // 当前槽位不可用的异常处理
+    if (m_activeSlotIndex >= m_weaponSlots.size()) {
+        m_activeSlotIndex = 0;
+    }
+
+    Player::WeaponType currentWeapon = m_weaponSlots[m_activeSlotIndex];
+    int currentUtility = evaluateWeaponUtility(currentWeapon);
+
+    // 遍历其他槽位，找最优武器
+    int bestUtility = currentUtility;
+    int bestSlotIndex = m_activeSlotIndex;
+
+    for (int i = 0; i < m_weaponSlots.size(); i++) {
+        if (i == m_activeSlotIndex) continue; // 跳过当前槽位
+
+        Player::WeaponType weaponType = m_weaponSlots[i];
+        int utility = evaluateWeaponUtility(weaponType);
+
+        // 只有效能差异超过阈值，才切换
+        if (utility > bestUtility) {
+            // 计算切换的风险成本
+            // 如果当前正在攻击，没有充分理由就不切 (60% 阈值)
+            // 如果在闪避或移动，更容易切 (40% 阈值)
+            float switchThreshold = (m_currentState == AIState::ATTACK) ? 0.60f : 0.40f;
+            float utilityRatio = (float)utility / qMax(currentUtility, 1);
+
+            if (utilityRatio > switchThreshold && m_dis(m_gen) < 0.5f) {
+                // 50% 概率锁定，避免频繁切换引发的颤抖现象
+                bestUtility = utility;
+                bestSlotIndex = i;
+            }
+        }
+    }
+
+    // 如果找到了更好的武器，执行切换
+    if (bestSlotIndex != m_activeSlotIndex) {
+        m_activeSlotIndex = bestSlotIndex;
+        m_weaponSwitchCooldown = 20; // 冷却 20 帧 (~330ms)
+        return true;
+    }
+
+    return false;
+}
+
+int GameAI::evaluateWeaponUtility(Player::WeaponType w) const
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return 0;
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+    float dist = distance(aiPos, targetPos);
+    float heightDiff = abs(targetPos.y() - aiPos.y());
+
+    int utility = 0;
+
+    switch (w) {
+    case Player::WeaponType::punch: {
+        // 近战物理：近距离高效，远距离无用
+        if (dist < 80.0f) {
+            utility = 70;
+        } else if (dist < 150.0f) {
+            utility = 40;
+        } else {
+            utility = 10;
+        }
+        // 对连锁甲无效
+        if (targetPlayer->armor == Player::ArmorType::chainmail) {
+            utility /= 2;
+        }
+        break;
+    }
+    case Player::WeaponType::knife: {
+        // 刀：中近距离，有穿甲能力
+        if (dist < 100.0f) {
+            utility = 75; // 比拳头好但需要更近
+        } else if (dist < 180.0f) {
+            utility = 45;
+        } else {
+            utility = 15;
+        }
+        // 对连锁甲有穿甲
+        break;
+    }
+    case Player::WeaponType::ball: {
+        // 实心球：抛物线，中距离，对护甲有效，但需要弹药
+        if (aiPlayer->ballCount <= 0) {
+            utility = 5; // 没弹药，几乎无用
+            break;
+        }
+        // 高度有利时效果最好
+        if (heightDiff < 40.0f && dist > 80.0f && dist < 350.0f) {
+            utility = 80;
+        } else if (dist < 300.0f) {
+            utility = 50;
+        } else {
+            utility = 20;
+        }
+        // 对护甲更有效
+        if (targetPlayer->armor != Player::ArmorType::none) {
+            utility += 15;
+        }
+        break;
+    }
+    case Player::WeaponType::rifle: {
+        // 步枪：远距离，连射，需要弹药
+        if (aiPlayer->rifleCount <= 0) {
+            utility = 5;
+            break;
+        }
+        // 高度接近、距离中远时最优
+        if (heightDiff < 80.0f && dist > 120.0f && dist < 400.0f) {
+            utility = 75;
+        } else if (dist < 500.0f) {
+            utility = 50;
+        } else {
+            utility = 30;
+        }
+        break;
+    }
+    case Player::WeaponType::sniper: {
+        // 狙击枪：极远距离，精确，需要弹药，装填慢
+        if (aiPlayer->sniperCount <= 0) {
+            utility = 5;
+            break;
+        }
+        // 距离越远越好，但近距离几乎无用
+        if (dist < 150.0f) {
+            utility = 15; // 太近了，难以使用
+        } else if (dist > 250.0f) {
+            utility = 85; // 远距离狙击最佳
+        } else {
+            utility = 45;
+        }
+        // 如果目标在掩护下或持盾，效能下降
+        break;
+    }
+    default:
+        utility = 0;
+        break;
+    }
+
+    // 应用状态修正系数
+    // 闪避/撤退状态更偏好远程武器
+    if (m_currentState == AIState::DODGE || m_currentState == AIState::RETREAT) {
+        if (w == Player::WeaponType::rifle || w == Player::WeaponType::sniper) {
+            utility += 20;
+        } else if (w == Player::WeaponType::punch) {
+            utility -= 10;
+        }
+    }
+    // 攻击状态偏好近程武器
+    else if (m_currentState == AIState::ATTACK && dist < 150.0f) {
+        if (w == Player::WeaponType::punch || w == Player::WeaponType::knife) {
+            utility += 15;
+        }
+    }
+
+    // 确保值在合理范围内
+    return qBound(0, utility, 100);
 }

@@ -63,6 +63,9 @@ private:
     void triggerModifierChoice(int player);
     QVector<ModifierData> filteredModifierPoolForPlayer(int playerIndex, bool excludeMaxHpUp) const;
     void applyRandomModifierToAI();
+    void applyBestModifierToAI();  // 新增：AI 智能选择最优修饰符
+        float evaluateModifierForAI(const ModifierData& mod, float aiHpRatio, float playerHpRatio) const;
+            float evaluateModifierForAIWithPersonality(const ModifierData& mod, float aiHpRatio, float playerHpRatio) const;
     void onModifierChosen(const ModifierData& chosen);
     void tryActivateSpell(int playerIndex);
     void tickSpells(float dt);

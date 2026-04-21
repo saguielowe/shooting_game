@@ -16,6 +16,103 @@ static QString spellEnumToString(GameSession::Spell spell) {
     default:                     return "";
     }
 }
+    void Widget::applyBestModifierToAI() {
+        if (players.size() < 2) return;
+        constexpr int aiIndex = 1;
+        auto& aiPlayer = players[aiIndex];
+        auto& playerPlayer = players[0];
+    
+        QVector<ModifierData> pool = filteredModifierPoolForPlayer(aiIndex, true);
+        if (pool.isEmpty()) return;
+
+        // AI 修饰符选择策略：根据当前血量和敌方状况智能选择
+        float aiHealthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
+        float playerHealthRatio = (float)playerPlayer->hp / playerPlayer->getMaxHp();
+    
+        ModifierData bestModifier = pool[0];
+            float bestScore = evaluateModifierForAIWithPersonality(bestModifier, aiHealthRatio, playerHealthRatio);
+
+        for (int i = 1; i < pool.size(); ++i) {
+                float score = evaluateModifierForAIWithPersonality(pool[i], aiHealthRatio, playerHealthRatio);
+            if (score > bestScore) {
+                bestScore = score;
+                bestModifier = pool[i];
+            }
+        }
+
+        aiPlayer->applyModifier(bestModifier);
+        qDebug().noquote() << QString("[无尽AI词条-智选] 获得：%1 (评分: %2)")
+                                  .arg(bestModifier.displayName)
+                                  .arg(bestScore, 0, 'f', 1);
+    }
+
+    float Widget::evaluateModifierForAI(const ModifierData& mod, float aiHpRatio, float playerHpRatio) const
+    {
+        float score = 50.0f; // 基础分
+    
+        // 分类评估不同类型修饰符
+        if (mod.displayName.contains("伤害", Qt::CaseInsensitive) || 
+            mod.displayName.contains("攻击", Qt::CaseInsensitive)) {
+            // 攻击增强：当敌方血量充足时好，可以尽快击杀
+            score += (1.0f - playerHpRatio) * 30.0f;
+            // 敌方没有防具时优先度提高
+            if (players.size() >= 2 && players[0]->armor == Player::ArmorType::none) {
+                score += 15.0f;
+            }
+        }
+        else if (mod.displayName.contains("冷却", Qt::CaseInsensitive) || 
+                 mod.displayName.contains("CDR", Qt::CaseInsensitive)) {
+            // 冷却减少：法术能更频繁释放，很有价值
+            score += 35.0f;
+        }
+        else if (mod.displayName.contains("生命", Qt::CaseInsensitive) || 
+                 mod.displayName.contains("血", Qt::CaseInsensitive) ||
+                 mod.displayName.contains("HP", Qt::CaseInsensitive)) {
+            // 生命值增加：血量越低越需要
+            score += (1.0f - aiHpRatio) * 40.0f;
+        }
+        else if (mod.displayName.contains("护甲", Qt::CaseInsensitive) || 
+                 mod.displayName.contains("防御", Qt::CaseInsensitive)) {
+            // 防御增强：血量越低越需要
+            score += (1.0f - aiHpRatio) * 30.0f;
+        }
+        else if (mod.displayName.contains("速度", Qt::CaseInsensitive) || 
+                 mod.displayName.contains("移动", Qt::CaseInsensitive)) {
+            // 移动速度：通用价值，增加逃脱/追击能力
+            score += 20.0f + (1.0f - aiHpRatio) * 15.0f;
+        }
+        else if (mod.displayName.contains("范围", Qt::CaseInsensitive) ||
+                 mod.displayName.contains("大小", Qt::CaseInsensitive)) {
+            // 范围增强：有一定价值
+            score += 15.0f;
+        }
+        else if (mod.displayName.contains("反伤", Qt::CaseInsensitive) ||
+                 mod.displayName.contains("反弹", Qt::CaseInsensitive)) {
+            // 反伤/反弹：对手武器强时很重要
+            if (players.size() >= 2) {
+                Player::WeaponType enemyWeapon = players[0]->weapon;
+                if (enemyWeapon == Player::WeaponType::rifle || 
+                    enemyWeapon == Player::WeaponType::sniper ||
+                    enemyWeapon == Player::WeaponType::ball) {
+                    score += 25.0f;
+                }
+            }
+        }
+        else if (mod.displayName.contains("克制", Qt::CaseInsensitive) ||
+                 mod.displayName.contains("压制", Qt::CaseInsensitive)) {
+            // 压制敌方的效果
+            score += 20.0f;
+        }
+        else {
+            // 其他未分类修饰符，给予中等评分
+            score += 10.0f;
+        }
+
+        // 稳定性因子：引入少量随机性避免过度优化
+        score += QRandomGenerator::global()->bounded(10.0f);
+    
+        return score;
+    }
 
 static GameSession::Spell weightedCounterPick(GameSession::Spell playerSpell) {
     int roll = QRandomGenerator::global()->bounded(100);
@@ -82,6 +179,65 @@ struct DropConfig {
 
 // 每帧触发概率（千分之X）
 static const int DROP_CHANCE_PER_FRAME = 100;
+float Widget::evaluateModifierForAIWithPersonality(const ModifierData& mod, float aiHpRatio, float playerHpRatio) const
+{
+    // 基础评分（不考虑性格）
+    float baseScore = evaluateModifierForAI(mod, aiHpRatio, playerHpRatio);
+    
+    // 根据 AI 性格应用权重调整
+    GameAI::AIPersonality personality = ai ? ai->getPersonality() : GameAI::AIPersonality::RUSH;
+    float personalityMultiplier = 1.0f;
+    
+    if (mod.displayName.contains("伤害", Qt::CaseInsensitive) || 
+        mod.displayName.contains("攻击", Qt::CaseInsensitive)) {
+        switch (personality) {
+        case GameAI::AIPersonality::RUSH:       personalityMultiplier = 1.4f; break;  // 冲锋：特别喜欢伤害
+        case GameAI::AIPersonality::KITE:       personalityMultiplier = 0.8f; break;  // 风筝：伤害次要
+        case GameAI::AIPersonality::SCAVENGER:  personalityMultiplier = 1.0f; break;  // 拾荒：正常
+        case GameAI::AIPersonality::TRICKSTER:  personalityMultiplier = 0.9f; break;  // 诡术：偏好法术相关
+        }
+    }
+    else if (mod.displayName.contains("冷却", Qt::CaseInsensitive) || 
+             mod.displayName.contains("CDR", Qt::CaseInsensitive)) {
+        switch (personality) {
+        case GameAI::AIPersonality::RUSH:       personalityMultiplier = 0.9f; break;   // 冲锋：冷却次要
+        case GameAI::AIPersonality::KITE:       personalityMultiplier = 1.1f; break;   // 风筝：有一定价值
+        case GameAI::AIPersonality::SCAVENGER:  personalityMultiplier = 1.0f; break;   // 拾荒：正常
+        case GameAI::AIPersonality::TRICKSTER:  personalityMultiplier = 1.5f; break;   // 诡术：法术能手，CDR 最爱
+        }
+    }
+    else if (mod.displayName.contains("生命", Qt::CaseInsensitive) || 
+             mod.displayName.contains("血", Qt::CaseInsensitive) ||
+             mod.displayName.contains("HP", Qt::CaseInsensitive)) {
+        switch (personality) {
+        case GameAI::AIPersonality::RUSH:       personalityMultiplier = 0.8f; break;   // 冲锋：血量不重要
+        case GameAI::AIPersonality::KITE:       personalityMultiplier = 1.2f; break;   // 风筝：生存很重要
+        case GameAI::AIPersonality::SCAVENGER:  personalityMultiplier = 1.3f; break;   // 拾荒：重视生存
+        case GameAI::AIPersonality::TRICKSTER:  personalityMultiplier = 1.0f; break;   // 诡术：均衡
+        }
+    }
+    else if (mod.displayName.contains("护甲", Qt::CaseInsensitive) || 
+             mod.displayName.contains("防御", Qt::CaseInsensitive)) {
+        switch (personality) {
+        case GameAI::AIPersonality::RUSH:       personalityMultiplier = 0.7f; break;   // 冲锋：防御不需要
+        case GameAI::AIPersonality::KITE:       personalityMultiplier = 1.3f; break;   // 风筝：防御很好
+        case GameAI::AIPersonality::SCAVENGER:  personalityMultiplier = 1.2f; break;   // 拾荒：有帮助
+        case GameAI::AIPersonality::TRICKSTER:  personalityMultiplier = 0.9f; break;   // 诡术：普通
+        }
+    }
+    else if (mod.displayName.contains("速度", Qt::CaseInsensitive) || 
+             mod.displayName.contains("移动", Qt::CaseInsensitive)) {
+        switch (personality) {
+        case GameAI::AIPersonality::RUSH:       personalityMultiplier = 1.2f; break;   // 冲锋：速度帮助推进
+        case GameAI::AIPersonality::KITE:       personalityMultiplier = 1.4f; break;   // 风筝：速度是必须
+        case GameAI::AIPersonality::SCAVENGER:  personalityMultiplier = 1.1f; break;   // 拾荒：有帮助
+        case GameAI::AIPersonality::TRICKSTER:  personalityMultiplier = 1.0f; break;   // 诡术：普通
+        }
+    }
+    // 其他修饰符默认 multiplier = 1.0f
+    
+    return baseScore * personalityMultiplier + (QRandomGenerator::global()->bounded(5LL) - 2.5f);  // 减少随机性范围
+}
 
 // 三个阶段配置，直接改这里调试
 static const DropConfig PHASE_CONFIGS[3] = {
@@ -344,24 +500,22 @@ void Widget::initGame() {
             this, &Widget::onPlayerRequest);
     connect(c2.get(), &PlayerController::requestThrowBall,
             this, &Widget::onPlayerRequest);
-    connect(c1.get(), &PlayerController::frozenBroken, this, [this](int victimId) {
+    auto handleFrozenBroken = [this](int victimId) {
         int casterIdx = 1 - victimId;
-        if (casterIdx < players.size()) {
-            auto& caster = players[casterIdx];
-            if (caster->modifiers.freezeBreakCDR) {
-                caster->spellState.cooldownRemain = qMax(0.f, caster->spellState.cooldownRemain - 5.f);
-            }
+        if (casterIdx < 0 || casterIdx >= players.size()) return;
+        auto& caster = players[casterIdx];
+        if (caster->modifiers.freezeBreakCDR) {
+            float cdReduce = 5.f;
+            caster->spellState.cooldownRemain = qMax(0.f, caster->spellState.cooldownRemain - cdReduce);
+            caster->spellState.cooldownMax = qMax(caster->spellState.cooldownMax - cdReduce, 5.f);
+            qDebug().noquote() << QString("[破定减CD] P%1 | CD剩余:%2s | CD上限:%3s")
+                                      .arg(caster->id + 1)
+                                      .arg(caster->spellState.cooldownRemain, 0, 'f', 1)
+                                      .arg(caster->spellState.cooldownMax, 0, 'f', 1);
         }
-    });
-    connect(c2.get(), &PlayerController::frozenBroken, this, [this](int victimId) {
-        int casterIdx = 1 - victimId;
-        if (casterIdx < players.size()) {
-            auto& caster = players[casterIdx];
-            if (caster->modifiers.freezeBreakCDR) {
-                caster->spellState.cooldownRemain = qMax(0.f, caster->spellState.cooldownRemain - 5.f);
-            }
-        }
-    });
+    };
+    connect(c1.get(), &PlayerController::frozenBroken, this, handleFrozenBroken);
+    connect(c2.get(), &PlayerController::frozenBroken, this, handleFrozenBroken);
 
     // ---- AI（人机/无尽模式启动，双人不启动）------------
     if (currentSession.mode != GameSession::Mode::PVP) { // 那为什么无尽模式AI似乎没反应？
@@ -369,6 +523,13 @@ void Widget::initGame() {
         ai->setTargetPlayer(players[0]);
         ai->setFollowDistance(80.0f);
         ai->setDifficulty(5);
+        
+            // 设置 AI 性格（随机）
+            GameAI::AIPersonality personality = GameAI::randomPersonality();
+            ai->setPersonality(personality);
+            const char* personalityNames[] = {"RUSH", "KITE", "SCAVENGER", "TRICKSTER"};
+            qDebug() << QString("[AI初始化] 性格: %1").arg(personalityNames[static_cast<int>(personality)]);
+        
         ai->setCurrentSpell(currentSession.spellP2);
         ai->startAI();
     }
@@ -418,6 +579,8 @@ void Widget::cleanupGame() {
     // 断开 controller 的信号，防止 clear 后还有回调
     for (auto& c : controllers)
         disconnect(c.get(), nullptr, this, nullptr);
+            15,  // 药品15%
+            15, 35, 35, 15  // 武器：刀15%，球35%，步枪35%，狙15%
 
     players.clear();
     controllers.clear();
@@ -539,7 +702,9 @@ void Widget::gameLoop() {
     m_timeSinceLastDrop += dt;
     if (currentSession.mode == GameSession::Mode::ENDLESS) {
         m_endlessAiModifierTimer += dt;
-        if (m_endlessAiModifierTimer >= ENDLESS_AI_MODIFIER_INTERVAL) {
+           // 动态间隔：基础 25s ± 5-10s 的随机变化
+           float dynamicInterval = ENDLESS_AI_MODIFIER_INTERVAL + (QRandomGenerator::global()->bounded(10LL) - 5.f);
+           if (m_endlessAiModifierTimer >= dynamicInterval) {
             m_endlessAiModifierTimer = 0.f;
             applyRandomModifierToAI();
         }
@@ -566,7 +731,20 @@ void Widget::gameLoop() {
     if(currentSession.mode == GameSession::Mode::AI || currentSession.mode == GameSession::Mode::ENDLESS){
         MoveIntent moveIntent = MoveIntent::NONE;
         AttackIntent attackIntent = false;
+        
+        // 更新AI的武器槽位信息
+        ai->updateWeaponSlotInfo(players[1]->weaponSlots, players[1]->activeSlotIndex);
+        
         ai->updateIntent(moveIntent, attackIntent);
+        
+        // 武器切槽意图处理
+        int targetSlot = ai->consumeWeaponSwitchIntent();
+        if (targetSlot >= 0 && targetSlot < players[1]->weaponSlots.size()) {
+            players[1]->activeSlotIndex = targetSlot;
+            players[1]->weapon = players[1]->weaponSlots[targetSlot];
+            qDebug() << "AI switched to weapon slot:" << targetSlot;
+        }
+        
         if (ai->consumeSpellCastIntent()) {
             tryActivateSpell(1);
         }
@@ -733,9 +911,18 @@ void Widget::updateDrops(float dt){
         }
         else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == MoveIntent::CROUCH) {
             drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
-            if (drop.lock()->itemType == "modifier" && currentSession.mode == GameSession::Mode::PVP){
-                triggerModifierChoice(1); // ai捡不了词条
-                break;
+            if (drop.lock()->itemType == "modifier"){
+                // 修改：允许AI在PVP和ENDLESS模式下拾取修饰符
+                // 在PVP模式下需要触发选择UI，在ENDLESS模式下直接应用
+                if (currentSession.mode == GameSession::Mode::PVP){
+                    triggerModifierChoice(1); // PVP模式：触发UI让玩家选择
+                    break;
+                }
+                else if (currentSession.mode == GameSession::Mode::ENDLESS){
+                    // ENDLESS模式：AI自动选择最优修饰符
+                    applyBestModifierToAI();
+                    break;
+                }
             }
             players[1]->weaponControll(drop.lock()->itemType);
         }
@@ -1066,6 +1253,9 @@ void Widget::tryActivateSpell(int playerIndex) {
     if (spell == GameSession::Spell::NONE) return;
     if (ss.isOnCooldown()) return;
 
+    // ── 通用检查：被定身时不能释放任何法术 ─────────────────
+    if (p->spellState.isFrozen) return;
+
     // ── 前置条件检查 ─────────────────────────────────────────
     auto& ctrl = controllers[playerIndex];
     bool inHurt = ctrl->isInHurt(); // 见第6节，PlayerController新增方法
@@ -1073,11 +1263,8 @@ void Widget::tryActivateSpell(int playerIndex) {
     // 定身：非硬直状态才可用
     if (spell == GameSession::Spell::FREEZE && inHurt) return;
 
-    // 隐身：非硬直、非被定身才可用
-    if (spell == GameSession::Spell::STEALTH &&
-        (inHurt || p->spellState.isFrozen)) return;
-    // 铜头：被定身时不可用
-    if (spell == GameSession::Spell::IRON_BODY && p->spellState.isFrozen) return;
+    // 隐身：非硬直状态才可用（定身检查已在上方，此处可省略）
+    if (spell == GameSession::Spell::STEALTH && inHurt) return;
 
     // ── 激活法术 ─────────────────────────────────────────────
     switch (spell) {
