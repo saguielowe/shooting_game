@@ -17,6 +17,27 @@ static QString spellEnumToString(GameSession::Spell spell) {
     }
 }
 
+static GameSession::Spell weightedCounterPick(GameSession::Spell playerSpell) {
+    int roll = QRandomGenerator::global()->bounded(100);
+    switch (playerSpell) {
+    case GameSession::Spell::FREEZE:
+        // 对定身：偏向隐身规避，其次铜头
+        if (roll < 70) return GameSession::Spell::STEALTH;
+        return GameSession::Spell::IRON_BODY;
+    case GameSession::Spell::STEALTH:
+        // 对隐身：偏向定身控节奏
+        if (roll < 75) return GameSession::Spell::FREEZE;
+        return GameSession::Spell::IRON_BODY;
+    case GameSession::Spell::IRON_BODY:
+        // 对铜头：偏向定身拉开换血节奏
+        if (roll < 75) return GameSession::Spell::FREEZE;
+        return GameSession::Spell::STEALTH;
+    default:
+        // 玩家无法术时，AI更偏攻击性控场
+        return GameSession::Spell::FREEZE;
+    }
+}
+
 // 检查玩家是否已拥有某唯一词条
 static bool playerHasUniqueModifier(const std::shared_ptr<Player>& p, ModifierType t) {
     switch (t) {
@@ -309,6 +330,13 @@ void Widget::initGame() {
     controllers.push_back(c1);
     controllers.push_back(c2);
 
+    // 法术配置：P1沿用session；P2在非PVP模式可按策略解析。
+    if (currentSession.mode != GameSession::Mode::PVP) {
+        currentSession.spellP2 = resolveAISpellForMode();
+    }
+    p1->spell = currentSession.spellP1;
+    p2->spell = currentSession.spellP2;
+
     qDebug() << "player spawned";
 
     // ---- 信号槽 -----------------------------------------
@@ -341,6 +369,7 @@ void Widget::initGame() {
         ai->setTargetPlayer(players[0]);
         ai->setFollowDistance(80.0f);
         ai->setDifficulty(5);
+        ai->setCurrentSpell(currentSession.spellP2);
         ai->startAI();
     }
     m_gameTime          = 0.f;
@@ -538,6 +567,9 @@ void Widget::gameLoop() {
         MoveIntent moveIntent = MoveIntent::NONE;
         AttackIntent attackIntent = false;
         ai->updateIntent(moveIntent, attackIntent);
+        if (ai->consumeSpellCastIntent()) {
+            tryActivateSpell(1);
+        }
         if (currentScene == "grass" && moveIntent == MoveIntent::NONE){
             moveIntent = MoveIntent::CROUCH; // 草地背景下不动就蹲下
         }
@@ -567,6 +599,46 @@ void Widget::gameLoop() {
     update();  // 触发 paintEvent()
     intent[1].attackIntent = false;
     intent[0].attackIntent = false;
+}
+
+GameSession::Spell Widget::resolveAISpellForMode() const {
+    if (currentSession.aiFreezePilotOnly) {
+        return GameSession::Spell::FREEZE;
+    }
+
+    auto randomPick = []() {
+        const GameSession::Spell pool[] = {
+            GameSession::Spell::FREEZE,
+            GameSession::Spell::STEALTH,
+            GameSession::Spell::IRON_BODY,
+        };
+        int idx = QRandomGenerator::global()->bounded(3);
+        return pool[idx];
+    };
+
+    // 无尽默认锁定法术，避免局中切法术造成体感不公平。
+    if (currentSession.mode == GameSession::Mode::ENDLESS && currentSession.endlessLockAiSpell) {
+        if (currentSession.aiSpellPolicy == GameSession::AiSpellPolicy::CONFIG_PICK &&
+            currentSession.spellP2 != GameSession::Spell::NONE) {
+            return currentSession.spellP2;
+        }
+        if (currentSession.aiSpellPolicy == GameSession::AiSpellPolicy::COUNTER_PICK) {
+            return weightedCounterPick(currentSession.spellP1);
+        }
+        return randomPick();
+    }
+
+    switch (currentSession.aiSpellPolicy) {
+    case GameSession::AiSpellPolicy::CONFIG_PICK:
+        return (currentSession.spellP2 == GameSession::Spell::NONE)
+            ? GameSession::Spell::FREEZE
+            : currentSession.spellP2;
+    case GameSession::AiSpellPolicy::COUNTER_PICK:
+        return weightedCounterPick(currentSession.spellP1);
+    case GameSession::AiSpellPolicy::RANDOM_PICK:
+    default:
+        return randomPick();
+    }
 }
 
 void Widget::spawnDrop() {

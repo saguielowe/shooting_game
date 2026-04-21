@@ -27,6 +27,13 @@ struct GameSession {
         FORBIDDEN  // 禁字法
     };
 
+    // ---- AI法术选择策略 -----------------------------------
+    enum class AiSpellPolicy {
+        CONFIG_PICK,    // 直接使用 spellP2
+        COUNTER_PICK,   // 根据玩家法术做加权对策抽样
+        RANDOM_PICK     // 从可用池中随机
+    };
+
     // ---- 基础参数 ----------------------------------------
     Mode    mode    = Mode::AI;
     int     bestOf  = 3;        // BO3/5/7/自定义
@@ -41,6 +48,9 @@ struct GameSession {
     // ---- 法术选择 ----------------------------------------
     Spell   spellP1 = Spell::NONE;
     Spell   spellP2 = Spell::NONE;
+    AiSpellPolicy aiSpellPolicy = AiSpellPolicy::COUNTER_PICK;
+    bool    endlessLockAiSpell = true;
+    bool    aiFreezePilotOnly  = true; // FREEZE 试点期开关
 
     // ---- 比分（MainWindow 维护）-------------------------
     int     scoreP1 = 0;

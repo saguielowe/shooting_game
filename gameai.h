@@ -144,18 +144,24 @@ private:
 public:
     void updateDropsInfo(const QVector<DropInfo>& drops) { m_availableDrops = drops; }
     void setCurrentWeapon(const QString& weapon) { m_currentWeapon = weapon; }
+        void setCurrentSpell(GameSession::Spell spell) { m_aiSpell = spell; }
+        bool consumeSpellCastIntent();
     // 在gameai.h中添加：
 private:
     bool isRangedWeapon(const QString& weaponType) const;
     void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
     float getRangedAttackDistance(const QString& weaponType) const;
     void handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent);
+        void updateSpellIntent();
+        bool shouldCastFreeze();
 private:
     // 预定动作序列
     QQueue<MoveIntent> m_plannedMoves;     // 预定的动作队列
     bool m_executingPlan;                  // 是否在执行预定计划
     QPointF m_lastKnownTargetPos;
     bool    m_targetVisible = true;
+        bool m_castSpellIntent = false;
+        GameSession::Spell m_aiSpell = GameSession::Spell::NONE;
 
 public:
     void planMoveSequence(const QVector<MoveIntent>& moves); // 设定动作序列

@@ -89,6 +89,7 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
     // 重置意图
     moveIntent = MoveIntent::NONE;
     attackIntent = false;
+    m_castSpellIntent = false;
 
     // 检查是否有有效的玩家引用
     if (!m_aiPlayer.lock() || !m_targetPlayer.lock()) {
@@ -158,6 +159,16 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
     if (nextState != m_currentState) {
         m_currentState = nextState;
     }
+
+    // 状态决策后再判断施法，避免与移动/攻击意图冲突。
+    updateSpellIntent();
+}
+
+bool GameAI::consumeSpellCastIntent()
+{
+    if (!m_castSpellIntent) return false;
+    m_castSpellIntent = false;
+    return true;
 }
 
 void GameAI::startAI()
@@ -946,4 +957,53 @@ void GameAI::handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackInt
     } else {
         executeAttack(moveIntent, attackIntent);
     }
+}
+
+void GameAI::updateSpellIntent()
+{
+    m_castSpellIntent = false;
+
+    if (m_aiSpell == GameSession::Spell::FREEZE && shouldCastFreeze()) {
+        m_castSpellIntent = true;
+    }
+}
+
+bool GameAI::shouldCastFreeze()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return false;
+
+    if (aiPlayer->spellState.isOnCooldown()) return false;
+    if (aiPlayer->spellState.isFrozen) return false;
+    if (targetPlayer->spellState.isFrozen) return false;
+    if (!m_targetVisible) return false;
+
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    QPointF targetPos = getPlayerPosition(targetPlayer);
+    float dist = distance(aiPos, targetPos);
+    float dy = std::abs(targetPos.y() - aiPos.y());
+
+    // FREEZE 先做窗口型施法：中近距离、同层优先。
+    if (dist < 70.f || dist > 300.f) return false;
+    if (dy > 90.f) return false;
+
+    float aiHpRatio = static_cast<float>(aiPlayer->hp) / aiPlayer->getMaxHp();
+    float targetHpRatio = static_cast<float>(targetPlayer->hp) / targetPlayer->getMaxHp();
+
+    float score = 0.15f;
+    if (targetHpRatio > aiHpRatio + 0.1f) score += 0.25f;
+    if (targetPlayer->weapon == Player::WeaponType::rifle ||
+        targetPlayer->weapon == Player::WeaponType::sniper) {
+        score += 0.2f;
+    }
+    if (dist >= 110.f && dist <= 240.f) {
+        score += 0.25f;
+    }
+    if (targetHpRatio < 0.15f) {
+        score -= 0.2f;
+    }
+
+    score = qBound(0.1f, score, 0.85f);
+    return m_dis(m_gen) < score;
 }

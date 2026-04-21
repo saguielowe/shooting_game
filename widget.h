@@ -66,6 +66,7 @@ private:
     void onModifierChosen(const ModifierData& chosen);
     void tryActivateSpell(int playerIndex);
     void tickSpells(float dt);
+    GameSession::Spell resolveAISpellForMode() const;
 
     GameSession currentSession;
     ModifierOverlay* modifierOverlay;   // 构造时 new 一次
