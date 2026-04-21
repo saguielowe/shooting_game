@@ -191,23 +191,40 @@ void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, Q
 
     // ── 普通受击：原有逻辑完全不变 ──────────────────────────
     if (cooldowns["hurt"] != 0) {
+        // 先对新伤害应用护甲减伤，再计算溢出伤害
+        float armorReducedDamage = damage;
+        if (player.lock()->armor == Player::ArmorType::chainmail) {
+            if (weaponType == Player::WeaponType::punch) return;
+            else if (weaponType == Player::WeaponType::knife) armorReducedDamage /= 2;
+        }
+        else if (player.lock()->armor == Player::ArmorType::vest
+                 && player.lock()->vestHardness > 0) {
+            if (weaponType == Player::WeaponType::rifle
+                || weaponType == Player::WeaponType::sniper) {
+                armorReducedDamage /= 2;
+                player.lock()->vestHardness -= armorReducedDamage;
+                if (player.lock()->vestHardness <= 0)
+                    player.lock()->armor = Player::ArmorType::noArmor;
+            }
+        }
+        
         float prevPeak = qMax(hurtPeakDamage, 0.f);
-        if (damage > prevPeak + 0.01f) {
+        if (armorReducedDamage > prevPeak + 0.01f) {
             float ratioPrev = prevPeak / player.lock()->maxHp;
-            float ratioNew  = damage / player.lock()->maxHp;
+            float ratioNew  = armorReducedDamage / player.lock()->maxHp;
             float stunPrev = qMin(2.24f * sqrtf(qMax(0.f, ratioPrev)), 1.8f);
             float stunNew  = qMin(2.24f * sqrtf(qMax(0.f, ratioNew)), 1.8f);
             float stunDiff = qMax(0.f, stunNew - stunPrev);
             cooldowns["hurt"] = qMax(cooldowns["hurt"], qMin(cooldowns["hurt"] + stunDiff, 1.8f));
 
-            float overflow = damage - prevPeak;
+            float overflow = armorReducedDamage - prevPeak;
             player.lock()->hp -= overflow;
             SoundManager::instance().play("hit", 0.35);
             qDebug().noquote() << QString("[硬直溢出受击] P%1 | 增量:%2 | 新峰值:%3")
                                       .arg(player.lock()->id + 1)
                                       .arg(overflow, 0, 'f', 1)
-                                      .arg(damage, 0, 'f', 1);
-            hurtPeakDamage = damage;
+                                      .arg(armorReducedDamage, 0, 'f', 1);
+            hurtPeakDamage = armorReducedDamage;
         }
         return;
     }

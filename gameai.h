@@ -9,6 +9,7 @@
 #include <cmath>
 #include <QQueue>
 #include <random>
+#include <QRandomGenerator>
 #include "player.h"
 #include "map.h"
 #include "CollisionResult.h"
@@ -71,8 +72,8 @@ public:
     void setAIPlayer(const std::shared_ptr<Player>& aiPlayer) { m_aiPlayer = aiPlayer; }
     void setTargetPlayer(const std::shared_ptr<Player>& targetPlayer) { m_targetPlayer = targetPlayer; }
 
-        // 性格系统接口
-        void setPersonality(AIPersonality personality) { m_personality = personality; }
+    // 性格系统接口
+    void setPersonality(AIPersonality personality) { m_personality = personality; }
         AIPersonality getPersonality() const { return m_personality; }
         static AIPersonality randomPersonality() {
             int p = QRandomGenerator::global()->bounded(4);
@@ -183,6 +184,7 @@ private:
     bool isRangedWeapon(const QString& weaponType) const;
     void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
     float getRangedAttackDistance(const QString& weaponType) const;
+    AIPersonality m_personality = AIPersonality::RUSH;  // 性格成员需要在这里声明供 shouldCastFreeze 使用
     void handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent);
     void updateSpellIntent();
     bool shouldCastFreeze();

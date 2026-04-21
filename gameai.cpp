@@ -992,9 +992,16 @@ bool GameAI::shouldCastFreeze()
     float dist = distance(aiPos, targetPos);
     float dy = std::abs(targetPos.y() - aiPos.y());
 
-    // FREEZE 先做窗口型施法：中近距离、同层优先。
+    // FREEZE 先做窗口型施法：中近距离、同层优先
     if (dist < 70.f || dist > 300.f) return false;
     if (dy > 90.f) return false;
+
+    // 优化：不在空中定身持近战武器的敌人（容易逃脱）
+    if (!targetPlayer->onGround && 
+        (targetPlayer->weapon == Player::WeaponType::punch || 
+         targetPlayer->weapon == Player::WeaponType::knife)) {
+        return false;  // 敌人空中做近战，不定身
+    }
 
     float aiHpRatio = static_cast<float>(aiPlayer->hp) / aiPlayer->getMaxHp();
     float targetHpRatio = static_cast<float>(targetPlayer->hp) / targetPlayer->getMaxHp();
@@ -1010,6 +1017,21 @@ bool GameAI::shouldCastFreeze()
     }
     if (targetHpRatio < 0.15f) {
         score -= 0.2f;
+    }
+
+    // 性格驱动的 FREEZE 时机
+    if (m_personality == AIPersonality::TRICKSTER) {
+        // 诡术型：冷却好了就用，追求频繁施法
+        score += 0.3f;  // 大幅提高欲望
+    } else {
+        // 其他性格：等待高伤武器或词条后再用
+        if (aiPlayer->weapon == Player::WeaponType::rifle || 
+            aiPlayer->weapon == Player::WeaponType::sniper) {
+            score += 0.15f;  // 持远程武器时提高定身欲望
+        }
+        if (aiPlayer->modifiers.damageMultiplier > 1.2f) {
+            score += 0.1f;  // 有高伤词条时更想定身
+        }
     }
 
     score = qBound(0.1f, score, 0.85f);
