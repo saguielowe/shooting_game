@@ -56,7 +56,7 @@ static QString spellEnumToString(GameSession::Spell spell) {
             // 攻击增强：当敌方血量充足时好，可以尽快击杀
             score += (1.0f - playerHpRatio) * 30.0f;
             // 敌方没有防具时优先度提高
-            if (players.size() >= 2 && players[0]->armor == Player::ArmorType::none) {
+            if (players.size() >= 2 && players[0]->armor == Player::ArmorType::noArmor) {
                 score += 15.0f;
             }
         }
@@ -579,8 +579,6 @@ void Widget::cleanupGame() {
     // 断开 controller 的信号，防止 clear 后还有回调
     for (auto& c : controllers)
         disconnect(c.get(), nullptr, this, nullptr);
-            15,  // 药品15%
-            15, 35, 35, 15  // 武器：刀15%，球35%，步枪35%，狙15%
 
     players.clear();
     controllers.clear();

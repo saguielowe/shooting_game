@@ -110,8 +110,8 @@ private:
     // 寻路核心
     bool isPathBlocked();
     bool needsJumpToReach(const QPointF& target);
-    QPointF getPlayerPosition(std::shared_ptr<Player> player);
-    bool isPlayerOnGround(std::shared_ptr<Player> player);
+    QPointF getPlayerPosition(std::shared_ptr<Player> player) const;
+    bool isPlayerOnGround(std::shared_ptr<Player> player) const;
 
     // === 预留的功能接口 ===
 
@@ -163,8 +163,8 @@ private:
 public:
     void updateDropsInfo(const QVector<DropInfo>& drops) { m_availableDrops = drops; }
     void setCurrentWeapon(const QString& weapon) { m_currentWeapon = weapon; }
-    void updateWeaponSlotInfo(const QVector<Player::WeaponType>& slots, int activeIdx) {
-        m_weaponSlots = slots;
+    void updateWeaponSlotInfo(const QVector<Player::WeaponType>& weaponSlots, int activeIdx) {
+        m_weaponSlots = weaponSlots;
         m_currentSlotIndex = activeIdx;  // 保存玩家当前的槽位，不覆盖 m_activeSlotIndex
     }
     

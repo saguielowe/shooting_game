@@ -364,12 +364,12 @@ QString GameAI::getoutput(AIState state){
     }
 }
 
-QPointF GameAI::getPlayerPosition(std::shared_ptr<Player> player)
+QPointF GameAI::getPlayerPosition(std::shared_ptr<Player> player) const
 {
     return QPointF(player->x, player->y);
 }
 
-bool GameAI::isPlayerOnGround(std::shared_ptr<Player> player)
+bool GameAI::isPlayerOnGround(std::shared_ptr<Player> player) const
 {
     return player->onGround;
 }
@@ -1029,7 +1029,7 @@ bool GameAI::shouldCastFreeze()
             aiPlayer->weapon == Player::WeaponType::sniper) {
             score += 0.15f;  // 持远程武器时提高定身欲望
         }
-        if (aiPlayer->modifiers.damageMultiplier > 1.2f) {
+        if (aiPlayer->modifiers.damageBonusMultiplier > 1.2f) {
             score += 0.1f;  // 有高伤词条时更想定身
         }
     }
@@ -1152,7 +1152,7 @@ int GameAI::evaluateWeaponUtility(Player::WeaponType w) const
             utility = 20;
         }
         // 对护甲更有效
-        if (targetPlayer->armor != Player::ArmorType::none) {
+        if (targetPlayer->armor != Player::ArmorType::noArmor) {
             utility += 15;
         }
         break;
