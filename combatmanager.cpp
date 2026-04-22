@@ -65,14 +65,17 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
                  p1->getWeaponType() == Player::WeaponType::knife)) {
                 float meleeIncoming = p1->getAttackDamage();
                 p1->clearAttackState();
-                p1->forceHurt(1.0f, dirToP2);
+                // 仅有荆棘词条时才反伤，否则只进入硬直
+                if (p2->getModifiers().ironBodyThorns) {
+                    p1->forceHurt(1.0f, dirToP1);
+                    p1->takeReflectDamage(meleeIncoming * 0.5f);
+                    recordOtherDamage(p2->getId(), meleeIncoming * 0.5f);
+                } else {
+                    p1->forceHurt(1.0f, dirToP1);
+                }
                 if (p2->getModifiers().ironBodyReflectCDR && !p2->hasUsedIronBodyReflectCdr()) {
                     p2->reduceSpellCooldown(5.f);
                     p2->markIronBodyReflectCdrUsed();
-                }
-                if (p2->getModifiers().ironBodyThorns) {
-                    p1->takeReflectDamage(meleeIncoming * 0.5f);
-                    recordOtherDamage(p2->getId(), meleeIncoming * 0.5f);
                 }
                 SoundManager::instance().play("tanfan", 0.7);
                 qDebug().noquote() << QString("[铜头铁臂] 近战反制 P%1 被硬直")
@@ -110,14 +113,17 @@ void CombatManager::checkPlayerVsPlayerCollision(PlayerController *p1, PlayerCon
                  p2->getWeaponType() == Player::WeaponType::knife)) {
                 float meleeIncoming = p2->getAttackDamage();
                 p2->clearAttackState();
-                p2->forceHurt(1.0f, dirToP1);
+                // 仅有荆棘词条时才反伤，否则只进入硬直
+                if (p1->getModifiers().ironBodyThorns) {
+                    p2->forceHurt(1.0f, dirToP1);
+                    p2->takeReflectDamage(meleeIncoming * 0.5f);
+                    recordOtherDamage(p1->getId(), meleeIncoming * 0.5f);
+                } else {
+                    p2->forceHurt(1.0f, dirToP1);
+                }
                 if (p1->getModifiers().ironBodyReflectCDR && !p1->hasUsedIronBodyReflectCdr()) {
                     p1->reduceSpellCooldown(5.f);
                     p1->markIronBodyReflectCdrUsed();
-                }
-                if (p1->getModifiers().ironBodyThorns) {
-                    p2->takeReflectDamage(meleeIncoming * 0.5f);
-                    recordOtherDamage(p1->getId(), meleeIncoming * 0.5f);
                 }
                 SoundManager::instance().play("tanfan", 0.7);
                 qDebug().noquote() << QString("[铜头铁臂] 近战反制 P%1 被硬直")

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <QQueue>
 #include <random>
+#include <array>
 #include <QRandomGenerator>
 #include "player.h"
 #include "map.h"
@@ -20,16 +21,14 @@ using AttackIntent = bool;  // 简单的bool型
 // 前向声明，假设你有Player类
 class Player;
 
-// AI状态枚举（完整架构，目前只实现FOLLOW）
+// AI状态枚举（统一五目标）
 enum class AIState {
     IDLE,
-    FOLLOW,           // 当前实现：跟随玩家
-    ATTACK,           // 预留：攻击模式
-    SEEK_WEAPON,      // 预留：寻找武器
-    SEEK_ARMOR,       // 预留：寻找护甲
-    DODGE,            // 预留：闪避子弹
-    RETREAT,          // 预留：战术撤退
-    SEEK_SUPPLY       // 预留：寻找补给
+    WAIT,             // 等待：等待法术/等待成长窗口
+    SURVIVE,          // 保命：撤离、躲避、补给
+    GROW,             // 成长：武器/护甲/词条/补给
+    CHASE,            // 追击：主动压近到可攻击窗口
+    ATTACK            // 攻击：执行当前武器打击策略
 };
 // 为QDebug添加MoveIntent支持
 inline QDebug operator<<(QDebug debug, const MoveIntent& intent)
@@ -68,6 +67,105 @@ public:
           TRICKSTER   // 诡术：技巧型，法术和 CDR 优先
      };
 
+    // 统一权重配置：测试时只需要改这一处即可。
+    struct AITuning {
+        // risk
+        float riskEnemyRifleSniper = 0.38f;
+        float riskEnemyBall = 0.22f;
+        float riskEnemyKnife = 0.12f;
+        float riskEnemyArmor = 0.08f;
+        float riskEnemyDamageBonus = 0.12f;
+        float riskEnemyIronBody = 0.15f;
+        float riskEnemyStealth = 0.10f;
+        float riskSelfFrozen = 0.45f;
+        float riskSelfLowHpScale = 0.45f;
+
+        // state scores
+        float waitBase = 0.20f;
+        float waitSpellReadyBonus = 0.35f;
+        float waitNoGrowthBonus = 0.15f;
+        float surviveLowHpScale = 0.50f;
+        float surviveRiskScale = 0.60f;
+        float surviveEnemyRangedBonus = 0.20f;
+        float growBase = 0.50f;
+        float growGrowthScoreScale = 0.50f;
+        float chaseBase = 0.25f;
+        float chaseNoAttackBonus = 0.35f;
+        float chaseDistNorm = 420.0f;
+        float chaseDistCap = 0.40f;
+        float attackCanAttack = 0.75f;
+        float attackCannotAttack = 0.10f;
+        float attackRangedBonus = 0.10f;
+        float attackRiskPenalty = 0.30f;
+
+        // state score modifiers
+        float frozenSurviveBonus = 0.45f;
+        float enemySpellWaitBonus = 0.05f;
+        float activeSpellWaitPenalty = 0.08f;
+        float activeSpellAttackBonus = 0.10f;
+        float enemyIronBodyAttackPenalty = 0.20f;
+        float stealthFirstHitChaseBonus = 0.25f;
+        float stealthFirstHitAttackBonus = 0.10f;
+        float ironBodyCloseRange = 180.0f;
+        float ironBodyCloseSurviveBonus = 0.10f;
+        float ironBodyCloseAttackBonus = 0.12f;
+        float ironBodyHardenedChaseBonus = 0.10f;
+
+        // hard gates
+        float panicRisk = 0.90f;
+        float panicHpRatio = 0.15f;
+        int stateCommitFrames = 14;
+
+        // personality multipliers [RUSH,KITE,SCAVENGER,TRICKSTER]
+        std::array<float, 4> waitMul    = {0.75f, 1.20f, 0.95f, 1.15f};
+        std::array<float, 4> surviveMul = {0.80f, 1.30f, 1.00f, 0.95f};
+        std::array<float, 4> growMul    = {0.90f, 0.95f, 1.35f, 1.10f};
+        std::array<float, 4> chaseMul   = {1.25f, 0.90f, 0.95f, 1.05f};
+        std::array<float, 4> attackMul  = {1.35f, 0.95f, 0.95f, 1.20f};
+
+        // stealth spell
+        float stealthBase = 0.10f;
+        float stealthRiskScale = 0.40f;
+        float stealthLowHpScale = 0.20f;
+        float stealthFirstHitWindowBonus = 0.30f;
+        float stealthFirstHitStateBonus = 0.20f;
+        float stealthDefensiveStateBonus = 0.15f;
+        float stealthTricksterBonus = 0.10f;
+        float stealthVsEnemyIronBodyBonus = 0.12f;
+        float stealthMinScore = 0.05f;
+        float stealthMaxScore = 0.90f;
+        float stealthWindowMinDist = 80.0f;
+        float stealthWindowMaxDist = 260.0f;
+        float stealthWindowMaxDy = 95.0f;
+        float stealthVsIronBodyRange = 180.0f;
+
+        // iron body spell
+        float ironBodyBase = 0.08f;
+        float ironBodyCloseDist = 190.0f;
+        float ironBodyCloseBonus = 0.25f;
+        float ironBodyVsMeleeBonus = 0.20f;
+        float ironBodyRiskScale = 0.35f;
+        float ironBodyLowHpScale = 0.10f;
+        float ironBodyThornsBonus = 0.15f;
+        float ironBodyHardenedBonus = 0.10f;
+        float ironBodyRushBonus = 0.08f;
+        float ironBodyMinScore = 0.05f;
+        float ironBodyMaxScore = 0.90f;
+        float ironBodyThornsRange = 170.0f;
+    };
+
+    enum class TuningPreset {
+        DEFAULT,
+        AGGRESSIVE,
+        DEFENSIVE,
+        GROWTH_FOCUSED
+    };
+
+    void setTuning(const AITuning& tuning) { m_tuning = tuning; }
+    const AITuning& getTuning() const { return m_tuning; }
+    void resetTuning();
+    void applyTuningPreset(TuningPreset preset);
+
     // 主要接口：设置AI控制的玩家和目标玩家
     void setAIPlayer(const std::shared_ptr<Player>& aiPlayer) { m_aiPlayer = aiPlayer; }
     void setTargetPlayer(const std::shared_ptr<Player>& targetPlayer) { m_targetPlayer = targetPlayer; }
@@ -101,8 +199,17 @@ private slots:
 private:
     // === 当前实现的功能 ===
 
-    // 跟随逻辑（当前唯一实现的状态）
+    // 统一目标执行层
+    void executeWait(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeSurvive(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeGrow(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeChase(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
+
+    // 兼容已有追踪路径逻辑
     void executeFollow(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeDodge(MoveIntent& moveIntent, AttackIntent& attackIntent);
+    void executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent);
     bool shouldMoveToTarget();
     MoveIntent calculateMoveDirection(QPointF target, bool y=true);
     bool shouldJump(QPointF target);
@@ -113,30 +220,29 @@ private:
     QPointF getPlayerPosition(std::shared_ptr<Player> player) const;
     bool isPlayerOnGround(std::shared_ptr<Player> player) const;
 
-    // === 预留的功能接口 ===
-
-    // 状态决策（目前只返回FOLLOW）
+    // 统一状态决策（单次评分）
     AIState determineNextState();
-
-    // 预留的执行函数
-    void executeAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
-    void executeSeekWeapon(MoveIntent& moveIntent, AttackIntent& attackIntent);
-    void executeSeekArmor(MoveIntent& moveIntent, AttackIntent& attackIntent);
-    void executeDodge(MoveIntent& moveIntent, AttackIntent& attackIntent);
-    void executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent);
-    void executeSeekSupply(MoveIntent& moveIntent, AttackIntent& attackIntent);
     void executeJump(MoveIntent& moveIntent, QPointF target, QPointF start);
 
-    // 预留的分析函数
+    // 统一成长目标
+    enum class GrowthType {
+        NONE,
+        WEAPON,
+        ARMOR,
+        SUPPLY,
+        MODIFIER
+    };
+
+    struct GrowthTarget {
+        GrowthType type = GrowthType::NONE;
+        QPointF position;
+        float score = -1.0f;
+    };
+
     double calculateThreat();
-    bool shouldSeekWeapon();
-    bool shouldSeekArmor();
     bool shouldDodge();
-    bool shouldRetreat();
-    bool shouldSeekSupply();
-    QPointF findBestWeapon();
-    QPointF findBestArmor();
-    QPointF findBestSupply();
+    GrowthTarget pickBestGrowthTarget() const;
+    float scoreGrowthDrop(const QString& itemType, const QPointF& dropPos, const QPointF& aiPos, float healthRatio) const;
     bool hasLineOfSight(const QPointF& from, const QPointF& to);
 
     // 工具函数
@@ -177,7 +283,13 @@ public:
         }
         return -1; // 不需要切槽
     }
-    void setCurrentSpell(GameSession::Spell spell) { m_aiSpell = spell; }
+    // 法术锁：开局选定后，本局内不再切换。
+    void setCurrentSpell(GameSession::Spell spell) {
+        if (!m_spellLocked && spell != GameSession::Spell::NONE) {
+            m_aiSpell = spell;
+            m_spellLocked = true;
+        }
+    }
     bool consumeSpellCastIntent();
     // 在gameai.h中添加：
 private:
@@ -187,7 +299,11 @@ private:
     AIPersonality m_personality = AIPersonality::RUSH;  // 性格成员需要在这里声明供 shouldCastFreeze 使用
     void handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent);
     void updateSpellIntent();
+    float calculateRisk(const std::shared_ptr<Player>& aiPlayer,
+                        const std::shared_ptr<Player>& targetPlayer) const;
     bool shouldCastFreeze();
+    bool shouldCastStealth();
+    bool shouldCastIronBody();
     bool shouldSwitchWeapon();
     int evaluateWeaponUtility(Player::WeaponType w) const;
 private:
@@ -197,7 +313,9 @@ private:
     QPointF m_lastKnownTargetPos;
     bool    m_targetVisible = true;
         bool m_castSpellIntent = false;
+        bool m_spellLocked = false;
         GameSession::Spell m_aiSpell = GameSession::Spell::NONE;
+        AITuning m_tuning;
 
 public:
     void planMoveSequence(const QVector<MoveIntent>& moves); // 设定动作序列
@@ -233,6 +351,7 @@ private:
     bool m_wasJumping;
     int m_jumpCooldown;
     int m_lastDodgeTime;      // 闪避冷却时间
+    int m_stateCommitFrames;  // 当前状态最短承诺帧
     QPointF m_lastPosition;           // 上一帧的位置
     int m_stuckCounter;               // 卡住计数器
     static const int STUCK_THRESHOLD = 40;        // 3秒无移动算卡住(60帧)
@@ -249,9 +368,6 @@ private:
     MoveIntent m_lastAttackMove;     // 上次攻击时的移动方向
     int m_attackMoveTimer;           // 攻击走位计时器
     float getAttackRange(std::shared_ptr<Player> player); // 获取攻击范围
-    
-        // 性格系统成员
-        AIPersonality m_personality = AIPersonality::RUSH; // 默认冲锋性格
 };
 
 #endif // GAMEAI_H

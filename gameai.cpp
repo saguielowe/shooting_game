@@ -1,8 +1,21 @@
 #include "gameai.h"
 
+namespace {
+int personalityIndex(GameAI::AIPersonality personality)
+{
+    switch (personality) {
+    case GameAI::AIPersonality::RUSH: return 0;
+    case GameAI::AIPersonality::KITE: return 1;
+    case GameAI::AIPersonality::SCAVENGER: return 2;
+    case GameAI::AIPersonality::TRICKSTER: return 3;
+    }
+    return 0;
+}
+}
+
 GameAI::GameAI(QObject *parent)
     : QObject(parent)
-    , m_currentState(AIState::FOLLOW)
+    , m_currentState(AIState::CHASE)
     , m_aiTimer(new QTimer(this))
     , m_updateInterval(50)     // 20 FPS
     , m_followDistance(100.0f)
@@ -15,6 +28,7 @@ GameAI::GameAI(QObject *parent)
     , m_gen(m_rd())
     , m_stuckCounter(0)
     , m_lastDodgeTime(0)        // 新增初始化
+    , m_stateCommitFrames(0)
     , m_dis(0.0, 1.0)
 {
     connect(m_aiTimer, &QTimer::timeout, this, &GameAI::processAI);
@@ -40,41 +54,63 @@ bool GameAI::isStuck()
 }
 void GameAI::handleStuckSituation(MoveIntent& moveIntent)
 {
-    // 卡住了，执行救急动作
-    qDebug() << "AI stuck detected! Executing emergency moves.";
+    // 卡住时不做随机乱动，改为刷新目标与状态，避免“无头苍蝇”。
+    qDebug() << "AI stuck detected! Retargeting strategy.";
 
-    // 清除任何预定动作
     m_plannedMoves.clear();
     m_executingPlan = false;
+    m_stateCommitFrames = 0;
+    m_stuckCounter = 0;
 
-    // 执行随机救急动作序列
-    QVector<MoveIntent> emergencyMoves;
-
-    // 随机选择救急策略
-    double randomChoice = m_dis(m_gen);
-
-    if (randomChoice < 0.4) {
-        // 策略1：跳跃脱困
-        emergencyMoves.append(MoveIntent::JUMP);
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-    } else if (randomChoice < 0.7) {
-        // 策略2：左右摆动
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-    } else {
-        // 策略3：组合动作
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-        emergencyMoves.append(MoveIntent::JUMP);
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
+    const GrowthTarget growth = pickBestGrowthTarget();
+    switch (m_currentState) {
+    case AIState::GROW:
+        m_currentState = AIState::CHASE;
+        break;
+    case AIState::CHASE:
+    case AIState::ATTACK:
+        m_currentState = (growth.type != GrowthType::NONE) ? AIState::GROW : AIState::WAIT;
+        break;
+    case AIState::WAIT:
+        m_currentState = AIState::CHASE;
+        break;
+    case AIState::SURVIVE:
+        m_currentState = (growth.type != GrowthType::NONE) ? AIState::GROW : AIState::CHASE;
+        break;
+    default:
+        m_currentState = AIState::CHASE;
+        break;
     }
 
-    planMoveSequence(emergencyMoves);
-    moveIntent = emergencyMoves[0]; // 立即开始执行
-
-    m_stuckCounter = 0; // 重置卡住计数器
+    // 立刻朝新目标执行一帧，保证“换目标”当下生效。
+    switch (m_currentState) {
+    case AIState::GROW:
+        {
+            AttackIntent attackIntent = false;
+            executeGrow(moveIntent, attackIntent);
+        }
+        break;
+    case AIState::SURVIVE:
+        {
+            AttackIntent attackIntent = false;
+            executeSurvive(moveIntent, attackIntent);
+        }
+        break;
+    case AIState::WAIT:
+        {
+            AttackIntent attackIntent = false;
+            executeWait(moveIntent, attackIntent);
+        }
+        break;
+    case AIState::CHASE:
+    case AIState::ATTACK:
+    default:
+        {
+            AttackIntent attackIntent = false;
+            executeChase(moveIntent, attackIntent);
+        }
+        break;
+    }
 }
 void GameAI::planMoveSequence(const QVector<MoveIntent>& moves)
 {
@@ -126,49 +162,52 @@ void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
         return; // 直接返回，不执行其他逻辑
     }
 
-    // 状态机执行
-    switch (m_currentState) {
-    case AIState::FOLLOW:
-        executeFollow(moveIntent, attackIntent);
-        break;
-    case AIState::ATTACK:
-        executeAttack(moveIntent, attackIntent);
-        break;
-    case AIState::SEEK_WEAPON:
-        executeSeekWeapon(moveIntent, attackIntent);
-        break;
-    case AIState::SEEK_ARMOR:
-        executeSeekArmor(moveIntent, attackIntent);
-        break;
-    case AIState::DODGE:
-        executeDodge(moveIntent, attackIntent);
-        break;
-    case AIState::RETREAT:
-        executeRetreat(moveIntent, attackIntent);
-        break;
-    case AIState::SEEK_SUPPLY:
-        executeSeekSupply(moveIntent, attackIntent);
-        break;
-
-    default:
-        break;
-    }
-
-    // 状态转换（目前只有FOLLOW状态）
+    // 统一决策：同一帧内先选目标状态，再产出施法与切槽意图。
     AIState nextState = determineNextState();
     if (nextState != m_currentState) {
         m_currentState = nextState;
     }
 
-    // 状态决策后再判断施法，避免与移动/攻击意图冲突。
+    // 施法与切槽同样属于本帧意图的一部分。
     updateSpellIntent();
 
-    // 武器切槽决策（在状态决策后）
-    if (shouldSwitchWeapon()) {
-        moveIntent = MoveIntent::NONE;
-        attackIntent = false;
-        // 注意：实际切槽由Widget通过consumed signal触发
-        // 此处仅标记"需要切槽"，Widget端会调用player->switchWeaponSlot()
+    const bool shouldSwitch = shouldSwitchWeapon();
+    if (shouldSwitch) {
+        // 默认切槽优先；但高风险下的防御法术允许抢占切槽。
+        const auto aiPlayer = m_aiPlayer.lock();
+        const auto targetPlayer = m_targetPlayer.lock();
+        const float risk = (aiPlayer && targetPlayer) ? calculateRisk(aiPlayer, targetPlayer) : 0.0f;
+        const bool defensiveSpell =
+            (m_aiSpell == GameSession::Spell::STEALTH || m_aiSpell == GameSession::Spell::IRON_BODY);
+
+        if (!(m_castSpellIntent && defensiveSpell && risk > 0.70f)) {
+            // 切槽帧不施法，避免同帧双意图冲突。
+            m_castSpellIntent = false;
+            moveIntent = MoveIntent::NONE;
+            attackIntent = false;
+            return;
+        }
+    }
+
+    // 状态机执行
+    switch (m_currentState) {
+    case AIState::WAIT:
+        executeWait(moveIntent, attackIntent);
+        break;
+    case AIState::SURVIVE:
+        executeSurvive(moveIntent, attackIntent);
+        break;
+    case AIState::GROW:
+        executeGrow(moveIntent, attackIntent);
+        break;
+    case AIState::CHASE:
+        executeChase(moveIntent, attackIntent);
+        break;
+    case AIState::ATTACK:
+        executeAttack(moveIntent, attackIntent);
+        break;
+    default:
+        break;
     }
 }
 
@@ -199,6 +238,43 @@ void GameAI::setDifficulty(int level)
     // 预留：后续可以根据难度调整其他参数
     // m_aimAccuracy = 0.3 + (level * 0.07);
     // m_aggressiveness = 0.2 + (level * 0.08);
+}
+
+void GameAI::resetTuning()
+{
+    m_tuning = AITuning{};
+}
+
+void GameAI::applyTuningPreset(TuningPreset preset)
+{
+    resetTuning();
+
+    // 预设只改关键方向参数，便于快速 A/B 测试。
+    switch (preset) {
+    case TuningPreset::DEFAULT:
+        break;
+    case TuningPreset::AGGRESSIVE:
+        m_tuning.attackCanAttack += 0.12f;
+        m_tuning.attackRiskPenalty *= 0.70f;
+        m_tuning.chaseNoAttackBonus += 0.10f;
+        m_tuning.panicRisk += 0.05f;
+        m_tuning.stealthDefensiveStateBonus *= 0.7f;
+        break;
+    case TuningPreset::DEFENSIVE:
+        m_tuning.surviveRiskScale += 0.20f;
+        m_tuning.surviveEnemyRangedBonus += 0.10f;
+        m_tuning.attackRiskPenalty += 0.15f;
+        m_tuning.panicHpRatio += 0.05f;
+        m_tuning.stealthDefensiveStateBonus += 0.10f;
+        break;
+    case TuningPreset::GROWTH_FOCUSED:
+        m_tuning.growBase += 0.20f;
+        m_tuning.growGrowthScoreScale += 0.20f;
+        m_tuning.waitNoGrowthBonus += 0.10f;
+        m_tuning.chaseNoAttackBonus *= 0.8f;
+        m_tuning.attackCanAttack *= 0.9f;
+        break;
+    }
 }
 
 void GameAI::processAI()
@@ -341,23 +417,20 @@ void GameAI::draw(QPainter& painter){
 
 // === 工具函数实现 ===
 QString GameAI::getoutput(AIState state){
-    if (state == AIState::ATTACK){
+    if (state == AIState::WAIT){
+        return "WAIT";
+    }
+    else if (state == AIState::SURVIVE){
+        return "SURVIVE";
+    }
+    else if (state == AIState::GROW){
+        return "GROW";
+    }
+    else if (state == AIState::CHASE){
+        return "CHASE";
+    }
+    else if (state == AIState::ATTACK){
         return "ATTACK";
-    }
-    else if (state == AIState::FOLLOW){
-        return "FOLLOW";
-    }
-    else if (state == AIState::RETREAT){
-        return "RETREAT";
-    }
-    else if (state == AIState::SEEK_WEAPON){
-        return "SEEK_WEAPON";
-    }
-    else if (state == AIState::SEEK_SUPPLY){
-        return "SEEK_SUPPLY";
-    }
-    else if (state == AIState::SEEK_ARMOR){
-        return "SEEK_ARMOR";
     }
     else{
         return "NONE";
@@ -384,134 +457,194 @@ float GameAI::horizontalDistance(const QPointF& a, const QPointF& b) const
     return abs(a.x() - b.x());
 }
 
+float GameAI::calculateRisk(const std::shared_ptr<Player>& aiPlayer,
+                            const std::shared_ptr<Player>& targetPlayer) const
+{
+    if (!aiPlayer || !targetPlayer) return 0.0f;
+
+    const float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
+    float risk = 0.0f;
+
+    if (targetPlayer->weapon == Player::WeaponType::rifle ||
+        targetPlayer->weapon == Player::WeaponType::sniper) {
+        risk += m_tuning.riskEnemyRifleSniper;
+    } else if (targetPlayer->weapon == Player::WeaponType::ball) {
+        risk += m_tuning.riskEnemyBall;
+    } else if (targetPlayer->weapon == Player::WeaponType::knife) {
+        risk += m_tuning.riskEnemyKnife;
+    }
+
+    if (targetPlayer->armor != Player::ArmorType::noArmor) risk += m_tuning.riskEnemyArmor;
+    if (targetPlayer->modifiers.damageBonusMultiplier > 1.2f) risk += m_tuning.riskEnemyDamageBonus;
+    if (targetPlayer->spellState.ironBodyActive) risk += m_tuning.riskEnemyIronBody;
+    if (targetPlayer->spellState.stealthActive) risk += m_tuning.riskEnemyStealth;
+    if (aiPlayer->spellState.isFrozen) risk += m_tuning.riskSelfFrozen;
+
+    risk += (1.0f - healthRatio) * m_tuning.riskSelfLowHpScale;
+    return qBound(0.0f, risk, 1.0f);
+}
+
 // === 预留功能的占位符实现 ===
 
 AIState GameAI::determineNextState()
 {
     auto aiPlayer = m_aiPlayer.lock();
     auto targetPlayer = m_targetPlayer.lock();
-    if (!aiPlayer || !targetPlayer) return AIState::FOLLOW;
+    if (!aiPlayer || !targetPlayer) return AIState::CHASE;
 
-    const bool endlessMode = aiPlayer->endlessImmortal;
+    const QPointF aiPos = getPlayerPosition(aiPlayer);
+    const QPointF targetPos = getPlayerPosition(targetPlayer);
+    const float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
+    const float dist = distance(aiPos, targetPos);
+    const float dy = std::abs(targetPos.y() - aiPos.y());
+    const bool enemyRanged = (targetPlayer->weapon == Player::WeaponType::rifle ||
+                              targetPlayer->weapon == Player::WeaponType::sniper ||
+                              targetPlayer->weapon == Player::WeaponType::ball);
+    const bool aiSpellOnCd = aiPlayer->spellState.isOnCooldown();
+    const bool aiSpellActive = aiPlayer->spellState.stealthActive || aiPlayer->spellState.ironBodyActive ||
+                               aiPlayer->spellState.barrierActive || aiPlayer->spellState.cloneActive;
+    const bool enemySpellActive = targetPlayer->spellState.stealthActive || targetPlayer->spellState.ironBodyActive ||
+                                  targetPlayer->spellState.barrierActive || targetPlayer->spellState.cloneActive ||
+                                  targetPlayer->spellState.isFrozen;
 
-    if (endlessMode) {
-        // 无尽模式下，AI不再过度偏防守：优先找武器和攻击，只有明显威胁时才闪避
-        if (shouldSeekWeapon()) {
-            return AIState::SEEK_WEAPON;
-        }
-        if (shouldSeekArmor()) {
-            return AIState::SEEK_ARMOR;
-        }
-        if (shouldSeekSupply()) {
-            return AIState::SEEK_SUPPLY;
-        }
-        if (shouldDodge()) {
-            return AIState::DODGE;
-        }
-        return AIState::ATTACK;
+    const float risk = calculateRisk(aiPlayer, targetPlayer);
+    const bool canSpellSoon = !aiSpellOnCd;
+    const bool hasSight = hasLineOfSight(aiPos, targetPos);
+    const bool canAttack = isRangedWeapon(m_currentWeapon)
+                               ? hasSight
+                               : (horizontalDistance(aiPos, targetPos) <= 140.0f && dy <= 90.0f);
+
+    const GrowthTarget growth = pickBestGrowthTarget();
+    const bool canGrow = (growth.type != GrowthType::NONE);
+    const bool hasStealthFirstHit = aiPlayer->modifiers.stealthFirstHit && !aiPlayer->spellState.stealthFirstHitUsed;
+    const bool enemyIronBodyUp = targetPlayer->spellState.ironBodyActive;
+
+    float sWait = m_tuning.waitBase + (canSpellSoon ? m_tuning.waitSpellReadyBonus : 0.0f) +
+                  (canGrow ? 0.0f : m_tuning.waitNoGrowthBonus);
+    float sSurvive = m_tuning.surviveLowHpScale * (1.0f - healthRatio) + m_tuning.surviveRiskScale * risk +
+                     (enemyRanged ? m_tuning.surviveEnemyRangedBonus : 0.0f);
+    float sGrow = canGrow ? (m_tuning.growBase + m_tuning.growGrowthScoreScale * growth.score) : -1.0f;
+    float sChase = m_tuning.chaseBase + (canAttack ? 0.0f : m_tuning.chaseNoAttackBonus) +
+                   qBound(0.0f, dist / m_tuning.chaseDistNorm, m_tuning.chaseDistCap);
+    float sAttack = (canAttack ? m_tuning.attackCanAttack : m_tuning.attackCannotAttack) +
+                    (isRangedWeapon(m_currentWeapon) ? m_tuning.attackRangedBonus : 0.0f) -
+                    m_tuning.attackRiskPenalty * risk;
+
+    // 法术状态与词条对上层目标的影响：统一在状态分数层做加减。
+    if (aiPlayer->spellState.isFrozen) sSurvive += m_tuning.frozenSurviveBonus;
+    if (enemySpellActive) sWait += m_tuning.enemySpellWaitBonus;
+    if (enemyIronBodyUp) sAttack -= m_tuning.enemyIronBodyAttackPenalty;
+    if (aiSpellActive) {
+        sWait -= m_tuning.activeSpellWaitPenalty;
+        sAttack += m_tuning.activeSpellAttackBonus;
     }
+    if (m_aiSpell == GameSession::Spell::STEALTH && hasStealthFirstHit) {
+        if (dist > 90.0f && dist < 260.0f && dy < 90.0f) {
+            sChase += m_tuning.stealthFirstHitChaseBonus;
+            sAttack += m_tuning.stealthFirstHitAttackBonus;
+        }
+    }
+    if (m_aiSpell == GameSession::Spell::IRON_BODY) {
+        if (dist < m_tuning.ironBodyCloseRange) {
+            sSurvive += m_tuning.ironBodyCloseSurviveBonus;
+            sAttack += m_tuning.ironBodyCloseAttackBonus;
+        }
+        if (aiPlayer->modifiers.ironBodyHardened) sChase += m_tuning.ironBodyHardenedChaseBonus;
+    }
+
+    const int pIdx = personalityIndex(m_personality);
+    sWait *= m_tuning.waitMul[pIdx];
+    sSurvive *= m_tuning.surviveMul[pIdx];
+    sGrow *= m_tuning.growMul[pIdx];
+    sChase *= m_tuning.chaseMul[pIdx];
+    sAttack *= m_tuning.attackMul[pIdx];
+
+    AIState bestState = AIState::WAIT;
+    float bestScore = sWait;
+    if (sSurvive > bestScore) { bestScore = sSurvive; bestState = AIState::SURVIVE; }
+    if (sGrow > bestScore) { bestScore = sGrow; bestState = AIState::GROW; }
+    if (sChase > bestScore) { bestScore = sChase; bestState = AIState::CHASE; }
+    if (sAttack > bestScore) { bestScore = sAttack; bestState = AIState::ATTACK; }
+
+    // 危机打断：保命优先。
+    if (risk > m_tuning.panicRisk || healthRatio < m_tuning.panicHpRatio) {
+        bestState = AIState::SURVIVE;
+    }
+
+    // 最短承诺窗口：避免因玩家连续跳跃导致每帧变状态。
+    if (m_currentState != bestState && m_stateCommitFrames > 0 && m_currentState != AIState::SURVIVE) {
+        --m_stateCommitFrames;
+        return m_currentState;
+    }
+
+    if (m_currentState != bestState) {
+        m_stateCommitFrames = m_tuning.stateCommitFrames;
+    } else if (m_stateCommitFrames > 0) {
+        --m_stateCommitFrames;
+    }
+
+    return bestState;
+
+}
+
+void GameAI::executeWait(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return;
 
     QPointF aiPos = getPlayerPosition(aiPlayer);
     QPointF targetPos = getPlayerPosition(targetPlayer);
-    float dist = distance(aiPos, targetPos);
-    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
+    float dx = targetPos.x() - aiPos.x();
 
-    // 血量充足时的激进策略
-    if (healthRatio > 0.6f) { // 优先拾取武器
-        if (shouldSeekWeapon()){
-            return AIState::SEEK_WEAPON;
-        }
-        if (shouldSeekArmor()) {
-            return AIState::SEEK_ARMOR;
-        }
-        if (targetPlayer->armor == Player::ArmorType::chainmail && aiPlayer->weapon == Player::WeaponType::punch){
-            // 无法对敌人造成伤害则放弃进攻
-            return AIState::FOLLOW;
-        }
-        return AIState::ATTACK;
+    // 等待不是站桩：保持小幅横向机动，顺便等技能窗口。
+    if (std::abs(dx) > 140.0f) {
+        moveIntent = (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+    } else if (std::abs(dx) < 70.0f) {
+        moveIntent = (dx > 0) ? MoveIntent::MOVING_LEFT : MoveIntent::MOVING_RIGHT;
+    } else {
+        moveIntent = MoveIntent::NONE;
     }
-
-    // 血量中等时的谨慎策略
-    else if (healthRatio > 0.3f) { // 优先找护甲
-        if (shouldDodge()){
-            return AIState::DODGE;
-        }
-        if (shouldSeekArmor()) {
-            return AIState::SEEK_ARMOR;
-        }
-        if (shouldSeekWeapon()){
-            return AIState::SEEK_WEAPON;
-        }
-        if (shouldSeekSupply()){ // 优先找补给
-            return AIState::SEEK_SUPPLY;
-        }
-        if (targetPlayer->armor == Player::ArmorType::chainmail && aiPlayer->weapon == Player::WeaponType::punch){
-            // 无法对敌人造成伤害则放弃进攻
-            return AIState::RETREAT;
-        }
-        return AIState::ATTACK;
-    }
-
-    // 血量危险时的保守策略
-    else {
-        if (shouldDodge()){
-            return AIState::DODGE;
-        }
-        if (shouldSeekSupply()){ // 优先找补给
-            return AIState::SEEK_SUPPLY;
-        }
-        if (targetPlayer->armor == Player::ArmorType::chainmail && aiPlayer->weapon == Player::WeaponType::punch){
-            // 无法对敌人造成伤害则放弃进攻
-            return AIState::RETREAT;
-        }
-        return AIState::ATTACK;
-    }
-}
-
-void GameAI::executeSeekWeapon(MoveIntent& moveIntent, AttackIntent& attackIntent)
-{
-    QPointF weaponPos = findBestWeapon();
-    if (weaponPos == QPointF()) {
-        executeFollow(moveIntent, attackIntent);
-        return;
-    }
-
-    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
-    float distToWeaponX = abs(aiPos.x() - weaponPos.x());
-    float distToWeapon = distance(aiPos, weaponPos);
-
-    // 如果很接近武器，就蹲下拾取
-    if (distToWeaponX < 20.0f && distToWeapon < 100.0f) {
-        moveIntent = MoveIntent::CROUCH;
-        attackIntent = false;
-        return;
-    }
-
-    // 使用通用寻路函数前往武器位置
-    executeMoveTo(weaponPos, moveIntent, 20.0f);
     attackIntent = false;
 }
 
-void GameAI::executeSeekArmor(MoveIntent& moveIntent, AttackIntent& attackIntent) {
-    QPointF armorPos = findBestArmor();
-    if (armorPos == QPointF()) {
-        executeFollow(moveIntent, attackIntent);
+void GameAI::executeSurvive(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    if (shouldDodge()) {
+        executeDodge(moveIntent, attackIntent);
+        return;
+    }
+    executeRetreat(moveIntent, attackIntent);
+}
+
+void GameAI::executeGrow(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return;
+
+    GrowthTarget target = pickBestGrowthTarget();
+    if (target.type == GrowthType::NONE) {
+        executeChase(moveIntent, attackIntent);
         return;
     }
 
-    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
-    float distToWeaponX = abs(aiPos.x() - armorPos.x());
-    float distToWeapon = distance(aiPos, armorPos);
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    float distX = abs(aiPos.x() - target.position.x());
+    float distAll = distance(aiPos, target.position);
 
-    // 如果很接近武器，就蹲下拾取
-    if (distToWeaponX < 20.0f && distToWeapon < 100.0f) {
+    if (distX < 20.0f && distAll < 100.0f) {
         moveIntent = MoveIntent::CROUCH;
         attackIntent = false;
         return;
     }
 
-    // 使用通用寻路函数前往武器位置
-    executeMoveTo(armorPos, moveIntent, 20.0f);
+    executeMoveTo(target.position, moveIntent, 20.0f);
+    attackIntent = false;
+}
+
+void GameAI::executeChase(MoveIntent& moveIntent, AttackIntent& attackIntent)
+{
+    executeFollow(moveIntent, attackIntent);
     attackIntent = false;
 }
 
@@ -637,58 +770,59 @@ void GameAI::executeRetreat(MoveIntent& moveIntent, AttackIntent& attackIntent)
 
 // 预留分析函数
 double GameAI::calculateThreat() { return 0.0; }
-bool GameAI::shouldSeekWeapon()
+GameAI::GrowthTarget GameAI::pickBestGrowthTarget() const
 {
     auto aiPlayer = m_aiPlayer.lock();
-    if (!aiPlayer) return false;
+    if (!aiPlayer) return GrowthTarget{};
 
-    // 血量很低时优先保命
-    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
-    if (healthRatio < 0.25f) return false;
+    const QPointF aiPos = getPlayerPosition(aiPlayer);
+    const float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
 
-    // 获取当前武器优先级
-    int currentPriority = getWeaponPriority(m_currentWeapon.isEmpty() ? "punch" : m_currentWeapon);
-
-    // 检查是否有更好的武器，有则拾取（武器带来的优势很大）
+    GrowthTarget best;
     for (const auto& drop : m_availableDrops) {
-        int dropPriority = getWeaponPriority(drop.itemType);
-        if (dropPriority > currentPriority) {
-            return true;
+        const float score = scoreGrowthDrop(drop.itemType, drop.position, aiPos, healthRatio);
+        if (score > best.score) {
+            best.score = score;
+            best.position = drop.position;
+            if (drop.itemType == "modifier") best.type = GrowthType::MODIFIER;
+            else if (drop.itemType == "chainmail" || drop.itemType == "vest") best.type = GrowthType::ARMOR;
+            else if (drop.itemType == "bandage" || drop.itemType == "medkit" || drop.itemType == "adrenaline") best.type = GrowthType::SUPPLY;
+            else best.type = GrowthType::WEAPON;
         }
     }
 
-    return false;
+    if (best.score < 0.0f) return GrowthTarget{};
+    return best;
 }
 
-QPointF GameAI::findBestWeapon()
+float GameAI::scoreGrowthDrop(const QString& itemType, const QPointF& dropPos, const QPointF& aiPos, float healthRatio) const
 {
-    auto aiPlayer = m_aiPlayer.lock();
-    if (!aiPlayer) return QPointF();
+    const float dropDistance = distance(aiPos, dropPos);
+    if (dropDistance > 500.0f) return -1.0f;
 
-    QPointF aiPos = getPlayerPosition(aiPlayer);
-    int currentPriority = getWeaponPriority(m_currentWeapon.isEmpty() ? "punch" : m_currentWeapon);
+    float score = (500.0f - dropDistance) / 500.0f;
 
-    QPointF bestWeaponPos;
-    int bestPriority = currentPriority;
-    float bestScore = -1.0f;
-
-    for (const auto& drop : m_availableDrops) {
-        int dropPriority = getWeaponPriority(drop.itemType);
-        float dropDistance = distance(aiPos, drop.position);
-
-        // 只考虑更好的武器
-        if (dropPriority > currentPriority && dropDistance < 500.0f) {
-            // 评分：优先级差异 - 距离惩罚
-            float score = (dropPriority - currentPriority);
-
-            if (score > bestScore) {
-                bestWeaponPos = drop.position;
-                bestScore = score;
-            }
-        }
+    if (itemType == "modifier") {
+        score += 0.35f;
+        if (m_personality == AIPersonality::TRICKSTER) score += 0.30f;
+        if (m_personality == AIPersonality::RUSH) score += 0.15f;
+    } else if (itemType == "chainmail" || itemType == "vest") {
+        score += 0.20f;
+        if (m_personality == AIPersonality::KITE) score += 0.35f;
+    } else if (itemType == "bandage" || itemType == "medkit" || itemType == "adrenaline") {
+        score += (1.0f - healthRatio) * 0.80f;
+        if (m_personality == AIPersonality::KITE) score += 0.20f;
+        if (m_personality == AIPersonality::RUSH) score -= 0.10f;
+    } else {
+        const int currentPriority = getWeaponPriority(m_currentWeapon.isEmpty() ? "punch" : m_currentWeapon);
+        const int dropPriority = getWeaponPriority(itemType);
+        if (dropPriority <= currentPriority) return -1.0f;
+        score += 0.20f * (dropPriority - currentPriority);
+        if (m_personality == AIPersonality::RUSH) score += 0.20f;
+        if (m_personality == AIPersonality::SCAVENGER) score += 0.10f;
     }
 
-    return bestWeaponPos;
+    return score;
 }
 
 int GameAI::getWeaponPriority(const QString& weaponType) const
@@ -699,29 +833,6 @@ int GameAI::getWeaponPriority(const QString& weaponType) const
     if (weaponType == "knife") return 2;
     if (weaponType == "punch") return 1;
     return 0; // 未知武器
-}
-
-void GameAI::executeSeekSupply(MoveIntent& moveIntent, AttackIntent& attackIntent){
-    QPointF supplyPos = findBestSupply();
-    if (supplyPos == QPointF()) {
-        executeFollow(moveIntent, attackIntent);
-        return;
-    }
-
-    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
-    float distToWeaponX = abs(aiPos.x() - supplyPos.x());
-    float distToWeapon = distance(aiPos, supplyPos);
-
-    // 如果很接近武器，就蹲下拾取
-    if (distToWeaponX < 20.0f && distToWeapon < 100.0f) {
-        moveIntent = MoveIntent::CROUCH;
-        attackIntent = false;
-        return;
-    }
-
-    executeMoveTo(supplyPos, moveIntent, 20.0f);
-    attackIntent = false;
-
 }
 
 void GameAI::executeAttack(MoveIntent& moveIntent, AttackIntent& attackIntent)
@@ -838,117 +949,6 @@ float GameAI::getRangedAttackDistance(const QString& weaponType) const
     if (weaponType == "ball") return 250.0f;
     return 100.0f;
 }
-bool GameAI::shouldSeekArmor() {
-    auto aiPlayer = m_aiPlayer.lock();
-    if (!aiPlayer) return false;
-
-    // 血量很低时优先保命
-    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
-    if (healthRatio < 0.15f) return false;
-
-    Player::WeaponType opponentWeapon = m_targetPlayer.lock()->weapon;
-    int desiredArmor = 0;
-    if (opponentWeapon == Player::WeaponType::punch || opponentWeapon == Player::WeaponType::knife){
-        desiredArmor = 1;
-    }
-    else if (opponentWeapon == Player::WeaponType::sniper || opponentWeapon == Player::WeaponType::rifle){
-        desiredArmor = 2;
-    }
-
-    if (!desiredArmor) return false; // 对手的武器无法用护甲防御，放弃
-
-    for (const auto& drop : m_availableDrops) {
-        if (drop.itemType == "chainmail" && desiredArmor == 1){
-            return true;
-        }
-        else if (drop.itemType == "vest" && desiredArmor == 2){
-            return true;
-        }
-    }
-
-    return false; // 没有想要的护甲，放弃
-}
-bool GameAI::shouldSeekSupply() {
-    auto aiPlayer = m_aiPlayer.lock();
-    if (!aiPlayer) return false;
-
-    // 血量很低时优先保命
-    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
-    if (healthRatio > 0.5f) return false;
-    if (m_targetPlayer.lock()->hp < 20){
-        return false; // 对手也快没血了，激进策略
-    }
-
-    for (const auto& drop : m_availableDrops) {
-        if (drop.itemType == "bandage" || drop.itemType == "medkit" || drop.itemType == "adrenaline"){
-            return true;
-        }
-    }
-
-   return false; // 没有补给掉落
-
-}
-QPointF GameAI::findBestArmor() {
-    auto aiPlayer = m_aiPlayer.lock();
-    if (!aiPlayer) return QPointF();
-    Player::WeaponType opponentWeapon = m_targetPlayer.lock()->weapon;
-    int desiredArmor = 0;
-    if (opponentWeapon == Player::WeaponType::punch || opponentWeapon == Player::WeaponType::knife){
-        desiredArmor = 1;
-    }
-    else if (opponentWeapon == Player::WeaponType::sniper || opponentWeapon == Player::WeaponType::rifle){
-        desiredArmor = 2;
-    }
-
-    if (!desiredArmor) return QPointF(); // 对手的武器无法用护甲防御，放弃
-
-    for (const auto& drop : m_availableDrops) {
-        if (drop.itemType == "chainmail" && desiredArmor == 1){
-            return drop.position;
-        }
-        else if (drop.itemType == "vest" && desiredArmor == 2){
-            return drop.position;
-        }
-    }
-
-    return QPointF(); // 没有想要的护甲，放弃
-}
-QPointF GameAI::findBestSupply() {
-    auto aiPlayer = m_aiPlayer.lock();
-    if (!aiPlayer) return QPointF();
-
-    float healthRatio = (float)aiPlayer->hp / aiPlayer->getMaxHp();
-
-    if (healthRatio > 0.6){
-        return QPointF(); // 血量很充足，先作战
-    }
-
-    int bestType = 0;
-    QPointF bestPos = QPointF();
-
-    for (const auto& drop : m_availableDrops) {
-        if (drop.itemType == "bandage"){
-            if (1 > bestType){
-                bestType = 1;
-                bestPos = drop.position;
-            }
-        }
-        else if (drop.itemType == "medkit"){
-            if (2 > bestType){
-                bestType = 2;
-                bestPos = drop.position;
-            }
-        }
-        else if (drop.itemType == "adrenaline" && healthRatio > 0.3){
-            if (3 > bestType){
-                bestType = 3;
-                bestPos = drop.position;
-            }
-        }
-    }
-
-    return bestPos; // 没有想要的护甲，放弃
-}
 
 void GameAI::handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent) {
     auto aiPlayer = m_aiPlayer.lock();
@@ -971,8 +971,19 @@ void GameAI::updateSpellIntent()
 {
     m_castSpellIntent = false;
 
-    if (m_aiSpell == GameSession::Spell::FREEZE && shouldCastFreeze()) {
-        m_castSpellIntent = true;
+    switch (m_aiSpell) {
+    case GameSession::Spell::FREEZE:
+        m_castSpellIntent = shouldCastFreeze();
+        break;
+    case GameSession::Spell::STEALTH:
+        m_castSpellIntent = shouldCastStealth();
+        break;
+    case GameSession::Spell::IRON_BODY:
+        m_castSpellIntent = shouldCastIronBody();
+        break;
+    default:
+        m_castSpellIntent = false;
+        break;
     }
 }
 
@@ -1035,6 +1046,91 @@ bool GameAI::shouldCastFreeze()
     }
 
     score = qBound(0.1f, score, 0.85f);
+    return m_dis(m_gen) < score;
+}
+
+bool GameAI::shouldCastStealth()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return false;
+
+    if (aiPlayer->spellState.isOnCooldown()) return false;
+    if (aiPlayer->spellState.isFrozen) return false;
+    if (aiPlayer->spellState.stealthActive) return false;
+    if (aiPlayer->spellState.ironBodyActive) return false;
+
+    const QPointF aiPos = getPlayerPosition(aiPlayer);
+    const QPointF targetPos = getPlayerPosition(targetPlayer);
+    const float dist = distance(aiPos, targetPos);
+    const float dy = std::abs(targetPos.y() - aiPos.y());
+    const float hpRatio = static_cast<float>(aiPlayer->hp) / aiPlayer->getMaxHp();
+    const float risk = calculateRisk(aiPlayer, targetPlayer);
+    const bool firstHitReady = aiPlayer->modifiers.stealthFirstHit && !aiPlayer->spellState.stealthFirstHitUsed;
+
+    float score = m_tuning.stealthBase;
+    score += risk * m_tuning.stealthRiskScale;
+    score += (1.0f - hpRatio) * m_tuning.stealthLowHpScale;
+
+    if (firstHitReady) {
+        // 有破影一击时，隐身也用于主动造击杀窗口。
+        if (dist > m_tuning.stealthWindowMinDist && dist < m_tuning.stealthWindowMaxDist &&
+            dy < m_tuning.stealthWindowMaxDy) {
+            score += m_tuning.stealthFirstHitWindowBonus;
+        }
+        if (m_currentState == AIState::CHASE || m_currentState == AIState::ATTACK) {
+            score += m_tuning.stealthFirstHitStateBonus;
+        }
+    } else {
+        // 没有破影一击时，隐身更偏保命与转线。
+        if (m_currentState == AIState::SURVIVE || m_currentState == AIState::GROW) {
+            score += m_tuning.stealthDefensiveStateBonus;
+        }
+    }
+
+    if (m_personality == AIPersonality::TRICKSTER) score += m_tuning.stealthTricksterBonus;
+    if (targetPlayer->spellState.ironBodyActive && dist < m_tuning.stealthVsIronBodyRange) {
+        score += m_tuning.stealthVsEnemyIronBodyBonus;
+    }
+
+    score = qBound(m_tuning.stealthMinScore, score, m_tuning.stealthMaxScore);
+    return m_dis(m_gen) < score;
+}
+
+bool GameAI::shouldCastIronBody()
+{
+    auto aiPlayer = m_aiPlayer.lock();
+    auto targetPlayer = m_targetPlayer.lock();
+    if (!aiPlayer || !targetPlayer) return false;
+
+    if (aiPlayer->spellState.isOnCooldown()) return false;
+    if (aiPlayer->spellState.isFrozen) return false;
+    if (aiPlayer->spellState.ironBodyActive) return false;
+    if (aiPlayer->spellState.stealthActive) return false;
+
+    const QPointF aiPos = getPlayerPosition(aiPlayer);
+    const QPointF targetPos = getPlayerPosition(targetPlayer);
+    const float dist = distance(aiPos, targetPos);
+    const float hpRatio = static_cast<float>(aiPlayer->hp) / aiPlayer->getMaxHp();
+    const float risk = calculateRisk(aiPlayer, targetPlayer);
+
+    float score = m_tuning.ironBodyBase;
+    if (dist < m_tuning.ironBodyCloseDist) score += m_tuning.ironBodyCloseBonus;
+    if (targetPlayer->weapon == Player::WeaponType::punch || targetPlayer->weapon == Player::WeaponType::knife) {
+        score += m_tuning.ironBodyVsMeleeBonus;
+    }
+    score += risk * m_tuning.ironBodyRiskScale;
+    score += (1.0f - hpRatio) * m_tuning.ironBodyLowHpScale;
+
+    if (aiPlayer->modifiers.ironBodyThorns && dist < m_tuning.ironBodyThornsRange) {
+        score += m_tuning.ironBodyThornsBonus;
+    }
+    if (aiPlayer->modifiers.ironBodyHardened && m_currentState == AIState::CHASE) {
+        score += m_tuning.ironBodyHardenedBonus;
+    }
+    if (m_personality == AIPersonality::RUSH) score += m_tuning.ironBodyRushBonus;
+
+    score = qBound(m_tuning.ironBodyMinScore, score, m_tuning.ironBodyMaxScore);
     return m_dis(m_gen) < score;
 }
 
@@ -1196,8 +1292,8 @@ int GameAI::evaluateWeaponUtility(Player::WeaponType w) const
     }
 
     // 应用状态修正系数
-    // 闪避/撤退状态更偏好远程武器
-    if (m_currentState == AIState::DODGE || m_currentState == AIState::RETREAT) {
+    // 保命状态更偏好远程武器
+    if (m_currentState == AIState::SURVIVE) {
         if (w == Player::WeaponType::rifle || w == Player::WeaponType::sniper) {
             utility += 20;
         } else if (w == Player::WeaponType::punch) {

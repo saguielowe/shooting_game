@@ -59,22 +59,38 @@ static QString spellEnumToString(GameSession::Spell spell) {
             if (players.size() >= 2 && players[0]->armor == Player::ArmorType::noArmor) {
                 score += 15.0f;
             }
+            // 性格溢价：RUSH 特别想要伤害
+            if (ai && ai->getPersonality() == GameAI::AIPersonality::RUSH) {
+                score += 40.0f;  // RUSH 额外加成
+            }
         }
         else if (mod.displayName.contains("冷却", Qt::CaseInsensitive) || 
                  mod.displayName.contains("CDR", Qt::CaseInsensitive)) {
             // 冷却减少：法术能更频繁释放，很有价值
             score += 35.0f;
+            // 性格溢价：TRICKSTER 特别想要 CDR
+            if (ai && ai->getPersonality() == GameAI::AIPersonality::TRICKSTER) {
+                score += 50.0f;  // TRICKSTER 额外加成
+            }
         }
         else if (mod.displayName.contains("生命", Qt::CaseInsensitive) || 
                  mod.displayName.contains("血", Qt::CaseInsensitive) ||
                  mod.displayName.contains("HP", Qt::CaseInsensitive)) {
             // 生命值增加：血量越低越需要
             score += (1.0f - aiHpRatio) * 40.0f;
+            // 性格溢价：KITE 特别想要生命
+            if (ai && ai->getPersonality() == GameAI::AIPersonality::KITE) {
+                score += 30.0f;  // KITE 额外加成
+            }
         }
         else if (mod.displayName.contains("护甲", Qt::CaseInsensitive) || 
                  mod.displayName.contains("防御", Qt::CaseInsensitive)) {
             // 防御增强：血量越低越需要
             score += (1.0f - aiHpRatio) * 30.0f;
+            // 性格溢价：KITE 特别想要防御
+            if (ai && ai->getPersonality() == GameAI::AIPersonality::KITE) {
+                score += 35.0f;  // KITE 额外加成
+            }
         }
         else if (mod.displayName.contains("速度", Qt::CaseInsensitive) || 
                  mod.displayName.contains("移动", Qt::CaseInsensitive)) {
@@ -698,15 +714,11 @@ void Widget::gameLoop() {
     float dt = lastTime.restart() / 1000.0f;
     m_gameTime          += dt;
     m_timeSinceLastDrop += dt;
-    if (currentSession.mode == GameSession::Mode::ENDLESS) {
-        m_endlessAiModifierTimer += dt;
-           // 动态间隔：基础 25s ± 5-10s 的随机变化
-           float dynamicInterval = ENDLESS_AI_MODIFIER_INTERVAL + (QRandomGenerator::global()->bounded(10LL) - 5.f);
-           if (m_endlessAiModifierTimer >= dynamicInterval) {
-            m_endlessAiModifierTimer = 0.f;
-            applyRandomModifierToAI();
-        }
-    }
+    // 移除无尽模式自动词条给予逻辑：让 AI 主动捡词条
+    // if (currentSession.mode == GameSession::Mode::ENDLESS) {
+    //     m_endlessAiModifierTimer += dt;
+    //     ...
+    // }
     //qDebug() << dt;
     if (dt > 0.05) qDebug() << 1 / dt;
     if (QRandomGenerator::global()->bounded(1000) < 3) {
@@ -895,37 +907,32 @@ void Widget::spawnDrop() {
 
 void Widget::updateDrops(float dt){
     for (auto& drop : drops) {
-        if (drop.lock() == nullptr){
-            return;
+        auto currentDrop = drop.lock();
+        if (!currentDrop) {
+            continue;
         }
-        if (drop.lock()->isCollectedBy(players[0].get()) && intent[0].moveIntent == MoveIntent::CROUCH) {
-            drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
-            if (drop.lock()->itemType == "modifier"){
+
+        if (currentDrop->isCollectedBy(players[0].get()) && intent[0].moveIntent == MoveIntent::CROUCH) {
+            currentDrop->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            if (currentDrop->itemType == "modifier"){
                 qDebug()<<"modifier collected!";
                 triggerModifierChoice(0);
-                break;
+            } else {
+                players[0]->weaponControll(currentDrop->itemType);
             }
-            players[0]->weaponControll(drop.lock()->itemType);
         }
-        else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == MoveIntent::CROUCH) {
-            drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
-            if (drop.lock()->itemType == "modifier"){
-                // 修改：允许AI在PVP和ENDLESS模式下拾取修饰符
-                // 在PVP模式下需要触发选择UI，在ENDLESS模式下直接应用
-                if (currentSession.mode == GameSession::Mode::PVP){
-                    triggerModifierChoice(1); // PVP模式：触发UI让玩家选择
-                    break;
-                }
-                else if (currentSession.mode == GameSession::Mode::ENDLESS){
-                    // ENDLESS模式：AI自动选择最优修饰符
-                    applyBestModifierToAI();
-                    break;
-                }
+        else if (currentDrop->isCollectedBy(players[1].get()) && intent[1].moveIntent == MoveIntent::CROUCH) {
+            currentDrop->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
+            if (currentDrop->itemType == "modifier"){
+                // 修改：AI 拾取修饰符时直接应用最优修饰符
+                applyBestModifierToAI();
+            } else {
+                players[1]->weaponControll(currentDrop->itemType);
             }
-            players[1]->weaponControll(drop.lock()->itemType);
         }
-        drop.lock()->setDt(dt);
-        drop.lock()->update();
+
+        currentDrop->setDt(dt);
+        currentDrop->update();
     }
     updateAIInfo();
 }
