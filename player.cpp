@@ -241,7 +241,7 @@ void Player::draw(QPainter& painter) {
     }
 
     // ── 原有血条逻辑（不变）─────────────────────────────────
-    if (endlessImmortal) return;
+    if (!endlessImmortal){
     QRect backgroundRect(hitbox.left(), hitbox.top() - 20, 100, 15);
     painter.setBrush(Qt::gray);
     painter.drawRect(backgroundRect);
@@ -252,6 +252,7 @@ void Player::draw(QPainter& painter) {
     painter.drawRect(healthRect);
     painter.drawText(healthRect, QString::number(int(hp)));
     painter.drawText(hitbox.left() - 10, hitbox.top(), (id ? "右" : "左"));
+    }
 
     if (armor == ArmorType::noArmor) return;
 

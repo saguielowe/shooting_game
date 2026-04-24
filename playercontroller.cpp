@@ -48,6 +48,14 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
     }
     if (cooldowns["hurt"] <= 0.f) hurtPeakDamage = 0.f;
     if (player.lock()->spellState.isFrozen) {
+        // 冻结时也要推进一次 update，让 hitbox / 血条位置保持同步
+        player.lock()->state.moveState = "null";
+        player.lock()->state.shootState = false;
+        player.lock()->vx = 0;
+        player.lock()->vy = 0;
+        player.lock()->applyGravity();
+        applyMapCollision();
+        player.lock()->update();
         return;
     }
 

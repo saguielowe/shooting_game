@@ -331,9 +331,14 @@ void Widget::initGame() {
     controllers.push_back(c1);
     controllers.push_back(c2);
 
-    // 法术配置：P1沿用session；P2在非PVP模式可按策略解析。
+    // 法术配置：P1沿用session；P2在人机/无尽初始化时按AI人格+玩家法术锁定。
     if (currentSession.mode != GameSession::Mode::PVP) {
-        currentSession.spellP2 = resolveAISpellForMode();
+        currentSession.spellP2 = ai->initSpellByPersonality(currentSession.spellP1);
+
+        qDebug() << "[AI Spell Init] personality="
+                 << (ai->getPersonality() == AIPersonality::BACK_TO_WALL ? "BACK_TO_WALL" : "KITE_SCAVENGER")
+                 << "playerSpell=" << spellEnumToString(currentSession.spellP1)
+                 << "aiSpell=" << spellEnumToString(currentSession.spellP2);
     }
     p1->spell = currentSession.spellP1;
     p2->spell = currentSession.spellP2;
@@ -455,7 +460,14 @@ void Widget::paintEvent(QPaintEvent*) {
         players[0]->draw(painter);
     }
     if (players.size() > 1 && players[1]) {
-        players[1]->draw(painter);
+        const bool hideAiBody = (currentSession.mode != GameSession::Mode::PVP) && players[1]->spellState.stealthActive;
+        if (!hideAiBody) {
+            players[1]->draw(painter);
+        }
+    }
+
+    if (ai) {
+        ai->draw(painter);
     }
 
     // 保护 entities
