@@ -40,41 +40,73 @@ bool GameAI::isStuck()
 }
 void GameAI::handleStuckSituation(MoveIntent& moveIntent)
 {
-    // 卡住了，执行救急动作
-    qDebug() << "AI stuck detected! Executing emergency moves.";
+    auto aiPlayer = m_aiPlayer.lock();
+    if (!aiPlayer) return;
+
+    qDebug() << "AI stuck detected! Executing random platform seek...";
 
     // 清除任何预定动作
     m_plannedMoves.clear();
     m_executingPlan = false;
 
-    // 执行随机救急动作序列
-    QVector<MoveIntent> emergencyMoves;
-
-    // 随机选择救急策略
-    double randomChoice = m_dis(m_gen);
-
-    if (randomChoice < 0.4) {
-        // 策略1：跳跃脱困
-        emergencyMoves.append(MoveIntent::JUMP);
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-    } else if (randomChoice < 0.7) {
-        // 策略2：左右摆动
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-    } else {
-        // 策略3：组合动作
-        emergencyMoves.append(MoveIntent::MOVING_RIGHT);
-        emergencyMoves.append(MoveIntent::JUMP);
-        emergencyMoves.append(MoveIntent::MOVING_LEFT);
+    // 获取当前所在平台
+    QPointF aiPos = getPlayerPosition(aiPlayer);
+    int currentPlatform = Map::getInstance().checkPlatform(aiPos);
+    
+    // 获取所有平台（碰撞箱）
+    const auto& allPlatforms = Map::getInstance().getCollisionBoxes();
+    
+    if (allPlatforms.isEmpty()) {
+        m_stuckCounter = 0;
+        return;
     }
 
-    planMoveSequence(emergencyMoves);
-    moveIntent = emergencyMoves[0]; // 立即开始执行
+    // 优先选择“更远”的平台，增加脱困成功率
+    int targetPlatformIdx = -1;
+    float bestScore = -1.f;
+    for (int i = 0; i < allPlatforms.size(); ++i) {
+        if (i == currentPlatform) continue;
+        const QRect& r = allPlatforms[i];
+        if (r.height() < 10 || r.width() < 80) continue;
 
-    m_stuckCounter = 0; // 重置卡住计数器
+        float centerX = r.center().x();
+        float dx = std::abs(centerX - aiPos.x());
+        float score = dx + static_cast<float>(m_dis(m_gen)) * 120.f;
+
+        // 偏好更远的平台，至少拉开一定距离
+        if (dx >= 220.f) score += 180.f;
+
+        if (score > bestScore) {
+            bestScore = score;
+            targetPlatformIdx = i;
+        }
+    }
+
+    if (targetPlatformIdx < 0) {
+        // 无法找到合适的不同平台，执行简单救急动作
+        QVector<MoveIntent> emergencyMoves;
+        if (m_dis(m_gen) < 0.5) {
+            emergencyMoves.append(MoveIntent::JUMP);
+            emergencyMoves.append(MoveIntent::MOVING_LEFT);
+        } else {
+            emergencyMoves.append(MoveIntent::JUMP);
+            emergencyMoves.append(MoveIntent::MOVING_RIGHT);
+        }
+        planMoveSequence(emergencyMoves);
+        moveIntent = emergencyMoves[0];
+    } else {
+        // 在目标平台上选择一个随机点
+        const QRect& targetRect = allPlatforms[targetPlatformIdx];
+        int randomX = targetRect.left() + (m_gen() % (targetRect.width() > 0 ? targetRect.width() : 1));
+        QPointF targetPoint(randomX, targetRect.top() - 20);
+
+        // 记录一个持续生效的脱困目标，防止下一帧又改回追人导致抖动
+        m_stuckEscapeTarget = targetPoint;
+        m_stuckEscapeTimer = 90;
+        executeMoveTo(m_stuckEscapeTarget, moveIntent, 30.0f);
+    }
+
+    m_stuckCounter = 0;  // 重置卡住计数器
 }
 void GameAI::planMoveSequence(const QVector<MoveIntent>& moves)
 {
@@ -203,13 +235,73 @@ void GameAI::processAI()
 
 void GameAI::executeFollow(MoveIntent& moveIntent, AttackIntent& attackIntent)
 {
-    //qDebug() << "following";
+    // ── 施法后强制攻击模式 ──────────────────────────────────
+    if (m_forcedAttackAfterSpell) {
+        m_forcedAttackTimer--;
+        if (m_forcedAttackTimer <= 0) {
+            m_forcedAttackAfterSpell = false;  // 强制模式结束
+        } else {
+            // 在强制模式中：靠近并持续攻击
+            QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+            QPointF targetPos = getPlayerPosition(m_targetPlayer.lock());
+            float dist = distance(aiPos, targetPos);
+
+            if (dist > 50.f) {
+                // 还没靠近，继续寻路
+                my_platform = Map::getInstance().checkPlatform(aiPos);
+                next_platform = Map::getInstance().findPath(aiPos, targetPos);
+
+                if (next_platform == -1 && my_platform != -1) {
+                    moveIntent = MoveIntent::NONE;
+                    attackIntent = true;
+                    return;
+                }
+
+                if (my_platform == -1) {
+                    moveIntent = calculateMoveDirection(next_target, false);
+                } else {
+                    if (my_platform == next_platform) {
+                        moveIntent = calculateMoveDirection(targetPos);
+                    } else {
+                        next_target = Map::getInstance().findTarget(aiPos, next_platform);
+                        moveIntent = calculateMoveDirection(next_target);
+                    }
+                }
+            } else {
+                // 已靠近，准备攻击
+                moveIntent = MoveIntent::NONE;
+            }
+            attackIntent = true;  // 持续攻击意图
+            return;
+        }
+    }
+
+    // ── 脱困目标优先：短时间内持续向远平台移动，降低意图晃动 ───
+    if (m_stuckEscapeTimer > 0) {
+        m_stuckEscapeTimer--;
+        QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+        if (distance(aiPos, m_stuckEscapeTarget) <= 45.f) {
+            m_stuckEscapeTimer = 0;
+        } else {
+            executeMoveTo(m_stuckEscapeTarget, moveIntent, 30.0f);
+            attackIntent = false;
+            return;
+        }
+    }
+
+    // ── 正常跟随逻辑 ──────────────────────────────────────
     if (!shouldMoveToTarget()) {
         return; // 距离合适，不需要移动
     }
 
     QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
     my_platform = Map::getInstance().checkPlatform(aiPos);
+
+    // ── Stuck 检测与随机寻路 ──────────────────────────────
+    if (isStuck()) {
+        handleStuckSituation(moveIntent);
+        return;
+    }
 
     // 计算要移动到的平台，如果我或对手在空中返回-1
     next_platform = Map::getInstance().findPath(aiPos, getPlayerPosition(m_targetPlayer.lock()));
@@ -959,12 +1051,27 @@ void GameAI::handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackInt
     }
 }
 
+int GameAI::getWeaponStrength(Player::WeaponType weapon) const
+{
+    // 武器优先级（较量强度）
+    switch (weapon) {
+    case Player::WeaponType::sniper:  return 5;
+    case Player::WeaponType::rifle:   return 4;
+    case Player::WeaponType::ball:    return 3;
+    case Player::WeaponType::knife:   return 2;
+    case Player::WeaponType::punch:   return 1;
+    default: return 0;
+    }
+}
+
 void GameAI::updateSpellIntent()
 {
     m_castSpellIntent = false;
 
     if (m_aiSpell == GameSession::Spell::FREEZE && shouldCastFreeze()) {
         m_castSpellIntent = true;
+        m_forcedAttackAfterSpell = true;  // 施法后进入强制攻击模式
+        m_forcedAttackTimer = FORCED_ATTACK_DURATION;
     }
 }
 
@@ -974,36 +1081,33 @@ bool GameAI::shouldCastFreeze()
     auto targetPlayer = m_targetPlayer.lock();
     if (!aiPlayer || !targetPlayer) return false;
 
-    if (aiPlayer->spellState.isOnCooldown()) return false;
-    if (aiPlayer->spellState.isFrozen) return false;
-    if (targetPlayer->spellState.isFrozen) return false;
-    if (!m_targetVisible) return false;
+    // 基本条件检查
+    if (aiPlayer->spellState.isOnCooldown()) return false;  // CD未好
+    if (aiPlayer->spellState.isFrozen) return false;         // 自己已冻结
+    if (targetPlayer->spellState.isFrozen) return false;     // 对手已冻结
+    if (!m_targetVisible) return false;                      // 看不见对手
 
+    // 距离检查
     QPointF aiPos = getPlayerPosition(aiPlayer);
     QPointF targetPos = getPlayerPosition(targetPlayer);
     float dist = distance(aiPos, targetPos);
     float dy = std::abs(targetPos.y() - aiPos.y());
 
-    // FREEZE 先做窗口型施法：中近距离、同层优先。
-    if (dist < 70.f || dist > 300.f) return false;
-    if (dy > 90.f) return false;
+    if (dist < 70.f || dist > 300.f) return false;  // 距离窗口
+    if (dy > 90.f) return false;                     // 同层检查
 
-    float aiHpRatio = static_cast<float>(aiPlayer->hp) / aiPlayer->getMaxHp();
-    float targetHpRatio = static_cast<float>(targetPlayer->hp) / targetPlayer->getMaxHp();
+    // 简化：基于相对武器强度的概率
+    int aiWeaponStrength = getWeaponStrength(aiPlayer->weapon);
+    int targetWeaponStrength = getWeaponStrength(targetPlayer->weapon);
 
-    float score = 0.15f;
-    if (targetHpRatio > aiHpRatio + 0.1f) score += 0.25f;
-    if (targetPlayer->weapon == Player::WeaponType::rifle ||
-        targetPlayer->weapon == Player::WeaponType::sniper) {
-        score += 0.2f;
-    }
-    if (dist >= 110.f && dist <= 240.f) {
-        score += 0.25f;
-    }
-    if (targetHpRatio < 0.15f) {
-        score -= 0.2f;
+    float castProbability = 0.0f;
+    if (aiWeaponStrength >= targetWeaponStrength) {
+        // 自己武器不差，每帧有1%概率释放
+        castProbability = 0.01f;
+    } else {
+        // 自己武器较差，每帧有0.5%概率释放
+        castProbability = 0.005f;
     }
 
-    score = qBound(0.1f, score, 0.85f);
-    return m_dis(m_gen) < score;
+    return m_dis(m_gen) < castProbability;
 }

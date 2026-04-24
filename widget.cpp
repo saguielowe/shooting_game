@@ -3,6 +3,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QLabel>
+#include <QLineF>
 #include "./ui_widget.h"
 #include <QScreen>
 static QString spellEnumToString(GameSession::Spell spell) {
@@ -564,6 +565,7 @@ void Widget::gameLoop() {
 
 
     if(currentSession.mode == GameSession::Mode::AI || currentSession.mode == GameSession::Mode::ENDLESS){
+        autoSwitchAIWeapon();
         MoveIntent moveIntent = MoveIntent::NONE;
         AttackIntent attackIntent = false;
         ai->updateIntent(moveIntent, attackIntent);
@@ -733,8 +735,12 @@ void Widget::updateDrops(float dt){
         }
         else if (drop.lock()->isCollectedBy(players[1].get()) && intent[1].moveIntent == MoveIntent::CROUCH) {
             drop.lock()->markForDeletion();  // ⚠️ 不立即删，留给后面统一处理
-            if (drop.lock()->itemType == "modifier" && currentSession.mode == GameSession::Mode::PVP){
-                triggerModifierChoice(1); // ai捡不了词条
+            if (drop.lock()->itemType == "modifier"){
+                if (currentSession.mode == GameSession::Mode::PVP) {
+                    triggerModifierChoice(1);
+                } else {
+                    applyRandomModifierFromThreeOptionsToAI();
+                }
                 break;
             }
             players[1]->weaponControll(drop.lock()->itemType);
@@ -1036,6 +1042,94 @@ void Widget::applyRandomModifierToAI() {
     qDebug().noquote() << QString("[无尽AI词条] 获得：%1").arg(chosen.displayName);
 }
 
+int Widget::weaponScoreForAI(Player::WeaponType weapon,
+                             const std::shared_ptr<Player>& aiPlayer,
+                             const std::shared_ptr<Player>& targetPlayer) const {
+    if (!aiPlayer || !targetPlayer) return 0;
+
+    const QPointF aiPos(aiPlayer->x, aiPlayer->y);
+    const QPointF targetPos(targetPlayer->x, targetPlayer->y);
+    const float dist = QLineF(aiPos, targetPos).length();
+
+    int score = 0;
+    switch (weapon) {
+    case Player::WeaponType::sniper: score = 95; break;
+    case Player::WeaponType::rifle:  score = 85; break;
+    case Player::WeaponType::ball:   score = 70; break;
+    case Player::WeaponType::knife:  score = 45; break;
+    case Player::WeaponType::punch:  score = 30; break;
+    }
+
+    if (weapon == Player::WeaponType::sniper && dist < 150.f) score -= 20;
+    if (weapon == Player::WeaponType::rifle  && dist < 90.f)  score -= 10;
+    if (weapon == Player::WeaponType::knife  && dist > 160.f) score -= 18;
+    if (weapon == Player::WeaponType::punch  && dist > 95.f)  score -= 25;
+    if (weapon == Player::WeaponType::ball   && aiPlayer->ballCount <= 0) score -= 100;
+    if (weapon == Player::WeaponType::rifle  && aiPlayer->rifleCount <= 0) score -= 100;
+    if (weapon == Player::WeaponType::sniper && aiPlayer->sniperCount <= 0) score -= 100;
+
+    return score;
+}
+
+void Widget::autoSwitchAIWeapon() {
+    if (players.size() < 2) return;
+    auto aiPlayer = players[1];
+    auto targetPlayer = players[0];
+    if (!aiPlayer || !targetPlayer) return;
+    if (aiPlayer->weaponSlots.isEmpty()) return;
+
+    int bestSlot = aiPlayer->activeSlotIndex;
+    int bestScore = -100000;
+    for (int i = 0; i < aiPlayer->weaponSlots.size(); ++i) {
+        int score = weaponScoreForAI(aiPlayer->weaponSlots[i], aiPlayer, targetPlayer);
+        if (score > bestScore) {
+            bestScore = score;
+            bestSlot = i;
+        }
+    }
+
+    if (bestSlot != aiPlayer->activeSlotIndex) {
+        aiPlayer->activeSlotIndex = bestSlot;
+        aiPlayer->weapon = aiPlayer->weaponSlots[bestSlot];
+    }
+}
+
+void Widget::applyRandomModifierFromThreeOptionsToAI() {
+    if (players.size() < 2) return;
+    constexpr int aiIndex = 1;
+
+    QVector<ModifierData> pool = filteredModifierPoolForPlayer(aiIndex, false);
+    if (pool.isEmpty()) return;
+
+    QVector<ModifierData> options;
+    QVector<int> indices;
+    int optionCount = qMin(3, pool.size());
+    while (indices.size() < optionCount) {
+        int idx = QRandomGenerator::global()->bounded(pool.size());
+        if (!indices.contains(idx)) {
+            indices.append(idx);
+            options.append(pool[idx]);
+        }
+    }
+
+    const ModifierData chosen = options[QRandomGenerator::global()->bounded(options.size())];
+    auto& myPlayer  = players[aiIndex];
+    auto& oppPlayer = players[1 - aiIndex];
+
+    if (chosen.type == ModifierType::ENEMY_MAX_HP_DOWN ||
+        chosen.type == ModifierType::ENEMY_MOVE_SPEED_DOWN) {
+        oppPlayer->applyEnemyModifier(chosen);
+    } else {
+        myPlayer->applyModifier(chosen);
+    }
+
+    qDebug().noquote() << QString("[AI词条3选1] 选项: %1 | %2 | %3 -> 选择: %4")
+                              .arg(options.size() > 0 ? options[0].displayName : "-")
+                              .arg(options.size() > 1 ? options[1].displayName : "-")
+                              .arg(options.size() > 2 ? options[2].displayName : "-")
+                              .arg(chosen.displayName);
+}
+
 void Widget::onModifierChosen(const ModifierData& chosen) {
     if (pendingModifierPlayer < 0) return;
 
@@ -1070,8 +1164,8 @@ void Widget::tryActivateSpell(int playerIndex) {
     auto& ctrl = controllers[playerIndex];
     bool inHurt = ctrl->isInHurt(); // 见第6节，PlayerController新增方法
 
-    // 定身：非硬直状态才可用
-    if (spell == GameSession::Spell::FREEZE && inHurt) return;
+    // 定身：非硬直、非被定身状态才可用
+    if (spell == GameSession::Spell::FREEZE && (inHurt || p->spellState.isFrozen)) return;
 
     // 隐身：非硬直、非被定身才可用
     if (spell == GameSession::Spell::STEALTH &&

@@ -61,6 +61,9 @@ private:
     void gameEnd(int id);
     void updateIntents();
     void triggerModifierChoice(int player);
+    void applyRandomModifierFromThreeOptionsToAI();
+    void autoSwitchAIWeapon();
+    int weaponScoreForAI(Player::WeaponType weapon, const std::shared_ptr<Player>& aiPlayer, const std::shared_ptr<Player>& targetPlayer) const;
     QVector<ModifierData> filteredModifierPoolForPlayer(int playerIndex, bool excludeMaxHpUp) const;
     void applyRandomModifierToAI();
     void onModifierChosen(const ModifierData& chosen);

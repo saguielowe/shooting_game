@@ -162,6 +162,14 @@ private:
     bool    m_targetVisible = true;
         bool m_castSpellIntent = false;
         GameSession::Spell m_aiSpell = GameSession::Spell::NONE;
+    
+    // ── 施法后强制模式 ──────────────────────
+    bool m_forcedAttackAfterSpell = false;  // 施法后强制寻路+攻击
+    int m_forcedAttackTimer = 0;            // 维持该模式的计时器（帧数）
+    static const int FORCED_ATTACK_DURATION = 60; // 强制攻击持续时间（帧）
+    
+    // ── 武器强度比较 ──────────────────────
+    int getWeaponStrength(Player::WeaponType weapon) const;
 
 public:
     void planMoveSequence(const QVector<MoveIntent>& moves); // 设定动作序列
@@ -199,6 +207,8 @@ private:
     int m_lastDodgeTime;      // 闪避冷却时间
     QPointF m_lastPosition;           // 上一帧的位置
     int m_stuckCounter;               // 卡住计数器
+    QPointF m_stuckEscapeTarget;      // 脱困时的目标点
+    int m_stuckEscapeTimer = 0;       // 脱困目标持续时间（帧）
     static const int STUCK_THRESHOLD = 40;        // 3秒无移动算卡住(60帧)
     static const int TARGET_REFRESH_THRESHOLD = 100; // 5秒强制刷新目标
 
