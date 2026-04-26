@@ -230,7 +230,7 @@ private:
     int m_stuckCounter;               // 卡住计数器
     QPointF m_stuckEscapeTarget;      // 脱困时的目标点
     int m_stuckEscapeTimer = 0;       // 脱困目标持续时间（帧）
-    static const int STUCK_THRESHOLD = 50;        // 3秒无移动算卡住(60帧)
+    static const int STUCK_THRESHOLD = 100;        // 3秒无移动算卡住(60帧)
     static const int TARGET_REFRESH_THRESHOLD = 100; // 5秒强制刷新目标
 
     bool isStuck();                   // 检测是否卡住

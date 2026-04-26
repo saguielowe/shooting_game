@@ -66,27 +66,28 @@ void GameAI::handleStuckSituation(MoveIntent& moveIntent)
         return;
     }
 
-    // 优先选择“更远”的平台，增加脱困成功率
+    // // 优先选择“更远”的平台，增加脱困成功率
     int targetPlatformIdx = -1;
-    float bestScore = -1.f;
-    for (int i = 0; i < allPlatforms.size(); ++i) {
-        if (i == currentPlatform) continue;
-        const QRect& r = allPlatforms[i];
-        if (r.height() < 10 || r.width() < 80) continue;
+    // float bestScore = -1.f;
+    // for (int i = 0; i < allPlatforms.size(); ++i) {
+    //     if (i == currentPlatform) continue;
+    //     const QRect& r = allPlatforms[i];
+    //     if (r.height() < 10 || r.width() < 80) continue;
 
-        float centerX = r.center().x();
-        float dx = std::abs(centerX - aiPos.x());
-        float score = dx + static_cast<float>(m_dis(m_gen)) * 120.f;
+    //     float centerX = r.center().x();
+    //     float dx = std::abs(centerX - aiPos.x());
+    //     float score = dx + static_cast<float>(m_dis(m_gen)) * 120.f;
 
-        // 偏好更远的平台，至少拉开一定距离
-        if (dx >= 220.f) score += 180.f;
+    //     // 偏好更远的平台，至少拉开一定距离
+    //     if (dx >= 220.f) score += 180.f;
 
-        if (score > bestScore) {
-            bestScore = score;
-            targetPlatformIdx = i;
-        }
-    }
+    //     if (score > bestScore) {
+    //         bestScore = score;
+    //         targetPlatformIdx = i;
+    //     }
+    // }
 
+    targetPlatformIdx = -1; // 拒绝随机寻路，回归简单救急。
     if (targetPlatformIdx < 0) {
         qDebug() << "No suitable platform found for escape! Executing random jump.";
         // 无法找到合适的不同平台，执行简单救急动作
@@ -414,37 +415,33 @@ void GameAI::executeMoveTo(QPointF target, MoveIntent& moveIntent, float stopDis
 }
 MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
 {
-    QPointF aiPos = getPlayerPosition(m_aiPlayer.lock());
+    auto aiPlayer = m_aiPlayer.lock();
+    QPointF aiPos = getPlayerPosition(aiPlayer);
     drawPos = targetPos;
 
     float dx = targetPos.x() - aiPos.x();
-    if (targetPos.y() < aiPos.y() - 20 && y){ // 如果目标在上层
+    if (targetPos.y() < aiPos.y() - 20 && y) {
         if (next_platform == -1) return MoveIntent::NONE;
         QPointF revised_target = Map::getInstance().prepareJump(aiPos, next_platform);
         drawPos = revised_target;
         dx = revised_target.x() - aiPos.x();
-        if (abs(dx) < 40.0f){
-            //确定一下跳跃方向再起跳
-            QVector<MoveIntent> jumpSequence;
-            if ((targetPos.x() < aiPos.x()) && (m_aiPlayer.lock()->direction == 1)){ // 目标左，方向右
-                auto firstIntent = MoveIntent::MOVING_LEFT;
-                jumpSequence.append(firstIntent);
-                jumpSequence.append(MoveIntent::JUMP);
-                return firstIntent; // 二楼目标在左，往左起跳
-            }
-            else if ((targetPos.x() > aiPos.x()) && (m_aiPlayer.lock()->direction == 0)){
-                auto firstIntent = MoveIntent::MOVING_RIGHT;
-                jumpSequence.append(firstIntent);
-                jumpSequence.append(MoveIntent::JUMP);
-                return firstIntent;
-            }
-            return MoveIntent::JUMP;
+        if (abs(dx) < 40.0f) {
+            // 方向不对：先转身一帧，下一帧自然会再进这里，dx还是<40，方向对了就跳
+            if (targetPos.x() < aiPos.x() && aiPlayer->direction == 1)
+                return MoveIntent::MOVING_LEFT;
+            if (targetPos.x() > aiPos.x() && aiPlayer->direction == 0)
+                return MoveIntent::MOVING_RIGHT;
+            // 方向OK，在地上就跳
+            if (isPlayerOnGround(aiPlayer))
+                return MoveIntent::JUMP;
+            // 空中就别乱动，让弧线飞
+            return MoveIntent::NONE;
         }
         return (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
     }
 
-    if (targetPos.y() > aiPos.y() + 50 && my_platform == 1){ // 仅1号平台下落需要调整目标
-        if (my_platform != -1 && next_platform != -1){
+    if (targetPos.y() > aiPos.y() + 50 && my_platform == 1) {
+        if (my_platform != -1 && next_platform != -1) {
             QPointF revised_target = Map::getInstance().prepareFall(aiPos, my_platform, next_platform);
             dx = revised_target.x() - aiPos.x();
             drawPos = revised_target;
@@ -452,10 +449,8 @@ MoveIntent GameAI::calculateMoveDirection(QPointF targetPos, bool y)
         }
     }
 
-    // 添加一个死区，避免抖动
-    if (abs(dx) < 10.0f) {
+    if (abs(dx) < 10.0f)
         return MoveIntent::NONE;
-    }
 
     return (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
 }
@@ -1000,7 +995,7 @@ void GameAI::executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackInt
     float maxRange = getRangedAttackDistance(m_currentWeapon);
 
     // 距离太近，需要拉开距离
-    if (dist < 150.0f) {
+    if (dist < 100.0f) {
         // 简单后退：往反方向移动
         float dx = aiPos.x() - targetPos.x();
         if (abs(dx) > 10.0f) {
@@ -1011,23 +1006,37 @@ void GameAI::executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackInt
     }
 
     // 在合适的攻击距离内
-    if (m_currentWeapon == "ball") {
-        // 实心球：简单预判，不追求精确
-        // 只要大概比对手高就开火
-        if (targetPos.y() >= aiPos.y() - 20) {
-            if (abs(aiPlayer->vx) > 10){ // 跑起来再开火
-                attackIntent = true;
-            }
-            else{
-                float dx = aiPos.x() - targetPos.x();
-                moveIntent = (dx < 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
-            }
+if (m_currentWeapon == "ball") {
+    float dx = targetPos.x() - aiPos.x();
+    float dy = aiPos.y() - targetPos.y(); // 正数=我比对手高
+    bool onGround = isPlayerOnGround(aiPlayer);
+
+    if (onGround) {
+        // 地面阶段：拉开水平距离准备助跑跳
+        if (abs(dx) < 180.0f) {
+            // 太近了，先往反方向跑拉开距离
+            moveIntent = (dx > 0) ? MoveIntent::MOVING_LEFT : MoveIntent::MOVING_RIGHT;
+            attackIntent = false;
+        } else {
+            // 距离够了，跳！
+            moveIntent = MoveIntent::JUMP;
+            attackIntent = false;
         }
-        else{
-            executeFollow(moveIntent, attackIntent); // 至少得和对手一样高
-            return;
+    } else {
+        // 空中阶段：朝玩家横移靠近
+        if (abs(dx) > 20.0f) {
+            moveIntent = (dx > 0) ? MoveIntent::MOVING_RIGHT : MoveIntent::MOVING_LEFT;
+        }
+
+        // 快落地了（vy > 0说明在下落）且比对手高：投掷
+        if (aiPlayer->vy > 2.0f && dy > -10.0f && (aiPlayer->direction) == (targetPos.x() - aiPos.x() > 0)) {
+            attackIntent = true;
+        } else {
+            attackIntent = false;
         }
     }
+    return;
+}
     else { // rifle或sniper
         // 枪械：精确瞄准
         if (abs(targetPos.y() - aiPos.y()) <= 60.0f) {
