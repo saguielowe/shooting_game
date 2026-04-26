@@ -1,8 +1,8 @@
 #include "entity.h"
 #include <QDebug>
 
-Entity::Entity(QPointF pos, int id): position(pos), parentId(id){
-    qDebug() << "【entity】："<<id;
+Entity::Entity(QPointF pos, int id, float frozenBonus): position(pos), parentId(id), frozenBonus(frozenBonus) {
+    //qDebug() << "【entity】："<<id;
 }
 
 void Entity::setDt(float t){

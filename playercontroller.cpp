@@ -46,6 +46,18 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
         if (cooldowns[key] > 0)
             cooldowns[key] = fmax(0, cooldowns[key] - player.lock()->dt);
     }
+    if (cooldowns["hurt"] <= 0.f) hurtPeakDamage = 0.f;
+    if (player.lock()->spellState.isFrozen) {
+        // 冻结时也要推进一次 update，让 hitbox / 血条位置保持同步
+        player.lock()->state.moveState = "null";
+        player.lock()->state.shootState = false;
+        player.lock()->vx = 0;
+        player.lock()->vy = 0;
+        player.lock()->applyGravity();
+        applyMapCollision();
+        player.lock()->update();
+        return;
+    }
 
     if (cooldowns["hurt"] != 0){
         player.lock()->applyGravity();
@@ -57,27 +69,29 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
     if (cooldowns["attack"] == 0 && attackIntent){ // 无需判定是否击中，空挥也有动画
         player.lock()->state.shootState = true; // 当按下攻击键且不处于冷却，判定可以攻击，打不打到无所谓
         triggerAttackCooldown();
-        if (player.lock()->weapon == Player::WeaponType::ball){
-            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, player.lock()->id);
+        if (player.lock()->weapon == Player::WeaponType::ball && player.lock()->ballCount > 0){
+            emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, Player::WeaponType::ball, getAttackDamage(), player.lock()->modifiers.freezeDmgMultiplier, player.lock()->id);
             player.lock()->ballCount --;
-            if (player.lock()->ballCount == 0){
-                player.lock()->weapon = Player::WeaponType::punch;
-            }
+            player.lock()->updateSlots();
         }
         else if (player.lock()->weapon == Player::WeaponType::rifle || player.lock()->weapon == Player::WeaponType::sniper){
             if (player.lock()->vx != 0){ // 此处步枪和狙击枪统一命令
-                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, player.lock()->id);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, player.lock()->vx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->modifiers.freezeDmgMultiplier, player.lock()->id);
             }
+            // 血量上限加减有问题
             else{
                 float vvx = player.lock()->direction ? 1 : -1; // 自动根据人物在场景位置选择射击方向
-                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, player.lock()->id);
+                emit requestThrowBall(player.lock()->x, player.lock()->y, vvx, player.lock()->vy, player.lock()->weapon, getAttackDamage(), player.lock()->modifiers.freezeDmgMultiplier, player.lock()->id);
             }
-            if (player.lock()->weapon == Player::WeaponType::rifle) SoundManager::instance().play("rifle", 0.4);
-            if (player.lock()->weapon == Player::WeaponType::sniper) SoundManager::instance().play("sniper", 0.6);
-            player.lock()->bulletCount --;
-            if (player.lock()->bulletCount == 0){
-                player.lock()->weapon = Player::WeaponType::punch;
+            if (player.lock()->weapon == Player::WeaponType::rifle){
+                SoundManager::instance().play("rifle", 0.4);
+                player.lock()->rifleCount --;
             }
+            else if (player.lock()->weapon == Player::WeaponType::sniper){
+                SoundManager::instance().play("sniper", 0.6);
+                player.lock()->sniperCount --;
+            }
+            player.lock()->updateSlots();
         }
         else if (player.lock()->weapon == Player::WeaponType::knife){
             SoundManager::instance().play("knife", 0.4);
@@ -114,43 +128,139 @@ void PlayerController::handleIntent(MoveIntent moveIntent, bool attackIntent){
 
 }
 
-void PlayerController::receiveHit(float damage, QString direction) {
-    if (cooldowns["hurt"] != 0){
-        return; // 硬直状态不再受伤（每1秒最多只受一次伤）
-    }
-    if (damage < 1){
-        return; // 忽略极小伤害，并且不给硬直
-    }
+void PlayerController::receiveHit(float damage, Player::WeaponType weaponType, QString direction) {
 
-    if (player.lock()->armor == Player::ArmorType::chainmail){
-        if (damage == 5){
-            return; // 免疫拳击，且不受硬直
+    // ── 定身状态受击 ─────────────────────────────────────────
+    if (player.lock()->spellState.isFrozen) {
+        if (damage < 1) return;
+
+        // 护甲减伤（同普通受击）
+        if (player.lock()->armor == Player::ArmorType::chainmail) {
+            if (weaponType == Player::WeaponType::punch) return;
+            else if (weaponType == Player::WeaponType::knife) damage /= 2;
         }
-        else if (damage == 15){
-            damage /= 2; // 小刀伤害减半
-        }
-    }
-    else if (player.lock()->armor == Player::ArmorType::vest && player.lock()->vestHardness > 0){
-        if (damage == 30 || damage == 60){
-            damage /= 2; // 防弹衣减免一半子弹伤害，并消耗耐久度承担这部分伤害
-            player.lock()->vestHardness -= damage;
-            if (player.lock()->vestHardness <= 0){
-                player.lock()->armor = Player::ArmorType::noArmor;
+        else if (player.lock()->armor == Player::ArmorType::vest
+                 && player.lock()->vestHardness > 0) {
+            if (weaponType == Player::WeaponType::rifle
+                || weaponType == Player::WeaponType::sniper) {
+                damage /= 2;
+                player.lock()->vestHardness -= damage;
+                if (player.lock()->vestHardness <= 0)
+                    player.lock()->armor = Player::ArmorType::noArmor;
             }
         }
+
+        SoundManager::instance().play("hit", 0.5);
+
+        player.lock()->hp -= damage;
+        auto& ss = player.lock()->spellState;
+        ss.frozenBreakHpLeft  -= damage;
+        ss.frozenTotalDamage  += damage;  // 新增：累计伤害
+
+        qDebug().noquote() << QString("[定身受击] P%1 | 伤害:%2 | 累计:%3 | HP:%4 → %5")
+                                  .arg(player.lock()->id + 1)
+                                  .arg(damage, 0, 'f', 1)
+                                  .arg(ss.frozenTotalDamage, 0, 'f', 1)
+                                  .arg(player.lock()->hp + damage, 0, 'f', 1)
+                                  .arg(player.lock()->hp, 0, 'f', 1);
+
+        if (ss.frozenBreakHpLeft <= 0) {
+            ss.isFrozen    = false;
+            ss.frozenRemain = 0.f;
+
+            // ── 用sqrt函数算硬直，基于累计伤害 ──────────────
+            float ratio    = ss.frozenTotalDamage / player.lock()->maxHp;
+            float stunTime = 2.24f * sqrtf(ratio);
+            stunTime = qMin(stunTime, 1.8f);
+            cooldowns["hurt"] = stunTime;
+
+            // 击退
+            if (direction == "left") {
+                player.lock()->vx = 60;
+                player.lock()->vy = -400;
+            } else {
+                player.lock()->vx = -60;
+                player.lock()->vy = -400;
+            }
+            player.lock()->state.moveState = "hurt";
+            player.lock()->update();
+
+            SoundManager::instance().play("frozen", 0.7);
+
+            qDebug().noquote() << QString("[定身破除] P%1 | 硬直:%.2fs")
+                                      .arg(player.lock()->id + 1)
+                                      .arg(stunTime, 0, 'f', 2);
+
+            ss.frozenTotalDamage = 0.f;  // 重置累计伤害
+            emit frozenBroken(player.lock()->id);
+        }
+        return;
     }
+
+    // ── 普通受击：原有逻辑完全不变 ──────────────────────────
+    if (cooldowns["hurt"] != 0) {
+        float prevPeak = qMax(hurtPeakDamage, 0.f);
+        if (damage > prevPeak + 0.01f) {
+            float ratioPrev = prevPeak / player.lock()->maxHp;
+            float ratioNew  = damage / player.lock()->maxHp;
+            float stunPrev = qMin(2.24f * sqrtf(qMax(0.f, ratioPrev)), 1.8f);
+            float stunNew  = qMin(2.24f * sqrtf(qMax(0.f, ratioNew)), 1.8f);
+            float stunDiff = qMax(0.f, stunNew - stunPrev);
+            cooldowns["hurt"] = qMax(cooldowns["hurt"], qMin(cooldowns["hurt"] + stunDiff, 1.8f));
+
+            float overflow = damage - prevPeak;
+            player.lock()->hp -= overflow;
+            SoundManager::instance().play("hit", 0.35);
+            qDebug().noquote() << QString("[硬直溢出受击] P%1 | 增量:%2 | 新峰值:%3")
+                                      .arg(player.lock()->id + 1)
+                                      .arg(overflow, 0, 'f', 1)
+                                      .arg(damage, 0, 'f', 1);
+            hurtPeakDamage = damage;
+        }
+        return;
+    }
+    if (damage < 1) return;
+
+    if (player.lock()->armor == Player::ArmorType::chainmail) {
+        if (weaponType == Player::WeaponType::punch) return;
+        else if (weaponType == Player::WeaponType::knife) damage /= 2;
+    }
+    else if (player.lock()->armor == Player::ArmorType::vest
+             && player.lock()->vestHardness > 0) {
+        if (weaponType == Player::WeaponType::rifle
+            || weaponType == Player::WeaponType::sniper) {
+            damage /= 2;
+            player.lock()->vestHardness -= damage;
+            if (player.lock()->vestHardness <= 0)
+                player.lock()->armor = Player::ArmorType::noArmor;
+        }
+    }
+
     SoundManager::instance().play("hit", 0.5);
+
+    qDebug().noquote() << QString("[受击] P%1 | 护甲后:%2 | HP:%3 → %4")
+                              .arg(player.lock()->id + 1)
+                              .arg(damage, 0, 'f', 1)
+                              .arg(player.lock()->hp, 0, 'f', 1)
+                              .arg(player.lock()->hp - damage, 0, 'f', 1);
+
     player.lock()->hp -= damage;
-    cooldowns["hurt"] = 1;
-    if (direction == "left"){
+    hurtPeakDamage = damage;
+    float ratio = damage / player.lock()->maxHp;      // 归一化到[0,1]
+    if (ratio < 0.03f){
+        player.lock()->state.moveState = "hurt";
+        player.lock()->update();
+        return;
+    }
+    float stun = 2.24f * sqrtf(ratio);
+    cooldowns["hurt"] = qMin(stun, 1.8f);  // 上限1.8秒
+    if (direction == "left") {
         player.lock()->vx = 60;
-        player.lock()->vy = -400;
-    }
-    else{
+        player.lock()->vy = -400 * fmin(1.f, damage / 20.f); // 伤害越大击退越远，最多400的初速度
+    } else {
         player.lock()->vx = -60;
-        player.lock()->vy = -400;
+        player.lock()->vy = -400 * fmin(1.f, damage / 20.f);
     }
-    //qDebug() << cooldowns["hurt"] << "Player 受到伤害：" << damage;
     player.lock()->state.moveState = "hurt";
     player.lock()->update();
 }
@@ -161,4 +271,88 @@ QRect PlayerController::getHitbox(){
 
 Player::WeaponType PlayerController::getWeaponType(){
     return player.lock()->weapon;
+}
+
+void PlayerController::forceHurt(float stunTime, const QString& direction) {
+    cooldowns["hurt"] = qMax(0.f, stunTime);
+    hurtPeakDamage = 0.f;
+    player.lock()->state.shootState = false;
+    if (direction == "left") {
+        player.lock()->vx = 60;
+        player.lock()->vy = -300;
+    } else {
+        player.lock()->vx = -60;
+        player.lock()->vy = -300;
+    }
+    player.lock()->state.moveState = "hurt";
+    player.lock()->update();
+}
+
+void PlayerController::consumeIronBodyAndStun(const QString& direction, float stunTime) {
+    auto p = player.lock();
+    p->spellState.ironBodyActive = false;
+    p->spellState.ironBodyRemain = 0.f;
+    p->spellState.ironBodyCdrUsed = false;
+    hurtPeakDamage = 0.f;
+    if (p->modifiers.ironBodyHardened) {
+        p->selfvelocityratio = p->velocityratio * p->modifiers.moveSpeedMultiplier;
+    }
+    forceHurt(stunTime, direction);
+}
+
+void PlayerController::consumeIronBodyWithNormalHurt(float damageAfterDefense, const QString& direction) {
+    auto p = player.lock();
+    p->spellState.ironBodyActive = false;
+    p->spellState.ironBodyRemain = 0.f;
+    p->spellState.ironBodyCdrUsed = false;
+    hurtPeakDamage = 0.f;
+    if (p->modifiers.ironBodyHardened) {
+        p->selfvelocityratio = p->velocityratio * p->modifiers.moveSpeedMultiplier;
+    }
+    if (cooldowns["hurt"] != 0 || damageAfterDefense < 1.f) return;
+
+    float ratio = damageAfterDefense / p->maxHp;
+    if (ratio < 0.03f) {
+        p->state.moveState = "hurt";
+        p->update();
+        return;
+    }
+    float stun = 2.24f * sqrtf(ratio);
+    cooldowns["hurt"] = qMin(stun, 1.8f);
+    if (direction == "left") {
+        p->vx = 60;
+        p->vy = -400 * fmin(1.f, damageAfterDefense / 20.f);
+    } else {
+        p->vx = -60;
+        p->vy = -400 * fmin(1.f, damageAfterDefense / 20.f);
+    }
+    p->state.moveState = "hurt";
+    p->update();
+}
+
+void PlayerController::reduceSpellCooldown(float sec) {
+    auto p = player.lock();
+    p->spellState.cooldownRemain = qMax(0.f, p->spellState.cooldownRemain - sec);
+}
+
+bool PlayerController::hasUsedIronBodyReflectCdr() const {
+    return player.lock()->spellState.ironBodyCdrUsed;
+}
+
+void PlayerController::markIronBodyReflectCdrUsed() {
+    player.lock()->spellState.ironBodyCdrUsed = true;
+}
+
+void PlayerController::takeReflectDamage(float damage) {
+    auto p = player.lock();
+    if (damage <= 0.f) return;
+    if (damage >= 1.f) {
+        qDebug().noquote() << QString("[弹反受击] P%1 | 反伤:%2 | HP:%3 → %4")
+                                  .arg(p->id + 1)
+                                  .arg(damage, 0, 'f', 1)
+                                  .arg(p->hp, 0, 'f', 1)
+                                  .arg(p->hp - damage, 0, 'f', 1);
+    }
+    p->hp -= damage;
+    SoundManager::instance().play("hit", 0.35);
 }

@@ -57,6 +57,7 @@
         <file>assets/items/bullet.png</file>
         <file>assets/items/chainmail.png</file>
         <file>assets/items/vest.png</file>
+        <file>assets/items/modifier.png</file>
     </qresource>
     <qresource prefix="/sounds">
         <file>assets/sounds/crash.wav</file>
@@ -64,5 +65,10 @@
         <file>assets/sounds/knife.wav</file>
         <file>assets/sounds/sniper.wav</file>
         <file>assets/sounds/hit.wav</file>
+        <file>assets/sounds/freeze.wav</file>
+        <file>assets/sounds/tanfan.wav</file>
+        <file>assets/sounds/frozen.wav</file>
+        <file>assets/sounds/stealth.wav</file>
+        <file>assets/sounds/tongtou.wav</file>
     </qresource>
 </RCC>

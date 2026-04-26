@@ -10,11 +10,15 @@
 #include "ball.h"
 #include "map.h"
 #include "playercontroller.h"
+#include "gamesession.h"
 #include "combatmanager.h"
 #include "dropitem.h"
 #include "bullet.h"
 #include <QRandomGenerator>
 #include "gameai.h"
+#include "modifieroverlay.h"
+#include "endlessresultwidget.h"
+#include "endlessrecordmanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -27,7 +31,9 @@ class Widget : public QWidget
     Q_OBJECT
 
 public:
-    Widget(const QString& scene, int maxHp, int maxBalls, int maxBullets, int maxSnipers, QWidget *parent = nullptr);
+    Widget(const GameSession& session, QWidget *parent = nullptr);
+    void resetGame(const GameSession& session);
+    void showMatchResult(const QString& text);
     void updateDrops(float dt);
     void updateBalls(float dt);
     void drawDrops(QPainter& painter);
@@ -41,14 +47,35 @@ protected:
 
 private slots:
     void gameLoop();
-    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, int id);
+    void onPlayerRequest(float x, float y, float vx, float vy, Player::WeaponType weapon, float initDamage, float frozenBonus, int id);
 signals:
     void keyPressed();
+    void roundEnded(int winnerId);  // 一局结束，传赢家 id
+    void matchResultConfirmed(); // 整场结束，玩家确认结果，准备返回菜单
 private:
+    void applySession(const GameSession& session);
+    void initGame(); // 读取game session信息后，给玩家赋初值。
+    void cleanupGame();
     void spawnDrop();
     void updateAIInfo();
     void gameEnd(int id);
+    void updateIntents();
+    void triggerModifierChoice(int player);
+    void applyRandomModifierFromThreeOptionsToAI();
+    void autoSwitchAIWeapon();
+    int weaponScoreForAI(Player::WeaponType weapon, const std::shared_ptr<Player>& aiPlayer, const std::shared_ptr<Player>& targetPlayer) const;
+    QVector<ModifierData> filteredModifierPoolForPlayer(int playerIndex, bool excludeMaxHpUp) const;
+    void applyRandomModifierToAI();
+    void onModifierChosen(const ModifierData& chosen);
+    void tryActivateSpell(int playerIndex);
+    void tickSpells(float dt);
+    GameSession::Spell resolveAISpellForMode() const;
 
+    GameSession currentSession;
+    ModifierOverlay* modifierOverlay;   // 构造时 new 一次
+    EndlessResultWidget* endlessResultWidget; // 无尽模式结算UI
+    EndlessRecordManager recordManager;   // 无尽模式成绩管理
+    int pendingModifierPlayer = -1;
     struct inputIntent {
         MoveIntent moveIntent;
         bool attackIntent;
@@ -65,6 +92,11 @@ private:
 
     QTimer* timer;
     QElapsedTimer lastTime;
+    float m_gameTime        = 0.f;  // 当前局内时间（秒）
+    float m_timeSinceLastDrop = 0.f; // 距上次掉落经过的时间
+    static const float DROP_GUARANTEE_TIME; // 保底时间，20秒
+    static const float ENDLESS_AI_MODIFIER_INTERVAL;
+    float m_endlessAiModifierTimer = 0.f;
     CombatManager cm;
 
     QString currentScene;
@@ -74,5 +106,9 @@ private:
 
     int m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers;
     QPixmap scenePixmap;
+
+    QSet<int> pressedKeys;
+    void drawStatusBar(QPainter& painter, int playerIndex);
+    QString spellName(GameSession::Spell spell) const;
 };
 #endif // WIDGET_H

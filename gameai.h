@@ -30,6 +30,16 @@ enum class AIState {
     RETREAT,          // 预留：战术撤退
     SEEK_SUPPLY       // 预留：寻找补给
 };
+
+enum class AIPersonality {
+    BACK_TO_WALL,     // 背水一战
+    KITE_SCAVENGER    // 游走机动+捡物资
+};
+
+enum class AIStrategicGoal {
+    PRESS_FIGHT,
+    SCAVENGE
+};
 // 为QDebug添加MoveIntent支持
 inline QDebug operator<<(QDebug debug, const MoveIntent& intent)
 {
@@ -144,15 +154,43 @@ private:
 public:
     void updateDropsInfo(const QVector<DropInfo>& drops) { m_availableDrops = drops; }
     void setCurrentWeapon(const QString& weapon) { m_currentWeapon = weapon; }
+    void setCurrentSpell(GameSession::Spell spell) { if (!m_spellLocked) m_aiSpell = spell; }
+    bool consumeSpellCastIntent();
+    AIPersonality getPersonality() const { return m_personality; }
+    GameSession::Spell initSpellByPersonality(GameSession::Spell playerSpell);
     // 在gameai.h中添加：
 private:
     bool isRangedWeapon(const QString& weaponType) const;
     void executeRangedAttack(MoveIntent& moveIntent, AttackIntent& attackIntent);
     float getRangedAttackDistance(const QString& weaponType) const;
+    void handleStealthTarget(MoveIntent& moveIntent, AttackIntent& attackIntent);
+        void updateSpellIntent();
+        bool shouldCastFreeze();
+        bool shouldCastStealth();
+        bool shouldCastIronBody();
+        void executeStealthFirstHitStrategy(MoveIntent& moveIntent, AttackIntent& attackIntent);
+        void refreshStrategicGoal();
+        bool hasAnySupplyDrop() const;
+        bool hasAnyUsefulDrop() const;
+        bool canDamageTarget(const std::shared_ptr<Player>& attacker,
+                             const std::shared_ptr<Player>& defender) const;
 private:
     // 预定动作序列
     QQueue<MoveIntent> m_plannedMoves;     // 预定的动作队列
     bool m_executingPlan;                  // 是否在执行预定计划
+    QPointF m_lastKnownTargetPos;
+    bool    m_targetVisible = true;
+    bool m_castSpellIntent = false;
+    GameSession::Spell m_aiSpell = GameSession::Spell::NONE;
+    bool m_spellLocked = false;
+    
+    // ── 施法后强制模式 ──────────────────────
+    bool m_forcedAttackAfterSpell = false;  // 施法后强制寻路+攻击
+    int m_forcedAttackTimer = 0;            // 维持该模式的计时器（帧数）
+    static const int FORCED_ATTACK_DURATION = 60; // 强制攻击持续时间（帧）
+    
+    // ── 武器强度比较 ──────────────────────
+    int getWeaponStrength(Player::WeaponType weapon) const;
 
 public:
     void planMoveSequence(const QVector<MoveIntent>& moves); // 设定动作序列
@@ -190,7 +228,9 @@ private:
     int m_lastDodgeTime;      // 闪避冷却时间
     QPointF m_lastPosition;           // 上一帧的位置
     int m_stuckCounter;               // 卡住计数器
-    static const int STUCK_THRESHOLD = 40;        // 3秒无移动算卡住(60帧)
+    QPointF m_stuckEscapeTarget;      // 脱困时的目标点
+    int m_stuckEscapeTimer = 0;       // 脱困目标持续时间（帧）
+    static const int STUCK_THRESHOLD = 100;        // 3秒无移动算卡住(60帧)
     static const int TARGET_REFRESH_THRESHOLD = 100; // 5秒强制刷新目标
 
     bool isStuck();                   // 检测是否卡住
@@ -204,6 +244,12 @@ private:
     MoveIntent m_lastAttackMove;     // 上次攻击时的移动方向
     int m_attackMoveTimer;           // 攻击走位计时器
     float getAttackRange(std::shared_ptr<Player> player); // 获取攻击范围
+
+    // ── 长期意图框架 ──────────────────────
+    AIPersonality m_personality = AIPersonality::BACK_TO_WALL;
+    AIStrategicGoal m_goal = AIStrategicGoal::PRESS_FIGHT;
+    int m_goalLockFrames = 0;
+    static const int GOAL_LOCK_DURATION = 600; // 约10秒（60FPS）
 };
 
 #endif // GAMEAI_H

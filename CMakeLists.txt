@@ -9,9 +9,14 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ✅ 这里要同时找 Widgets + Multimedia
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Multimedia)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Multimedia)
+# ✅ MSVC 编码支持：处理 UTF-8 中文注释
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
+# ✅ 这里要同时找 Widgets + Multimedia + Core（用于JSON）
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Multimedia Core)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Multimedia Core)
 
 set(PROJECT_SOURCES
     main.cpp
@@ -41,6 +46,13 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         bullet.h bullet.cpp
         soundmanager.h soundmanager.cpp
         gameai.h gameai.cpp
+        mainwindow.h mainwindow.cpp
+        setupwidget.cpp setupwidget.h
+        gamesession.h
+        modifierdata.h modifieroverlay.cpp modifieroverlay.h
+        endlessresultwidget.h endlessresultwidget.cpp
+        endlessrecordmanager.h endlessrecordmanager.cpp
+        spellstate.h
     )
 else()
     if(ANDROID)
@@ -55,8 +67,8 @@ target_link_libraries(shooting_game
     PRIVATE
         Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Multimedia
+        Qt${QT_VERSION_MAJOR}::Core
 )
-target_link_libraries(shooting_game PRIVATE Qt6::Core)
 
 # ✅ 下面这些不用动
 if(${QT_VERSION} VERSION_LESS 6.1.0)

@@ -1,0 +1,86 @@
+#ifndef GAMESESSION_H
+#define GAMESESSION_H
+#include <QString>
+
+// ============================================================
+//  GameSession — 跨局持久状态，由 MainWindow 持有
+//  Widget 每局开始时读取，结束时通过信号汇报结果
+// ============================================================
+
+struct GameSession {
+
+    // ---- 游戏模式 ----------------------------------------
+    enum class Mode {
+        AI,       // 人机对战
+        PVP,      // 双人对战
+        ENDLESS   // 无尽模式（AI无限血，统计伤害）
+    };
+
+    // ---- 法术（占坑，逻辑后续实现）----------------------
+    enum class Spell {
+        NONE,
+        FREEZE,    // 定身
+        STEALTH,   // 隐身（仅人机）
+        BARRIER,   // 安身法
+        IRON_BODY, // 铜头铁臂
+        CLONE,     // 身外身法
+        FORBIDDEN  // 禁字法
+    };
+
+    // ---- AI法术选择策略 -----------------------------------
+    enum class AiSpellPolicy {
+        CONFIG_PICK,    // 直接使用 spellP2
+        COUNTER_PICK,   // 根据玩家法术做加权对策抽样
+        RANDOM_PICK     // 从可用池中随机
+    };
+
+    // ---- 基础参数 ----------------------------------------
+    Mode    mode    = Mode::AI;
+    int     bestOf  = 3;        // BO3/5/7/自定义
+    QString scene   = "default";
+
+    // ---- 初始装备参数（原来 initSettings 的内容）--------
+    float   maxHp      = 200.f;
+    int     maxBalls   = 3;
+    int     maxBullets = 5;
+    int     maxSnipers = 2;
+
+    // ---- 法术选择 ----------------------------------------
+    Spell   spellP1 = Spell::NONE;
+    Spell   spellP2 = Spell::NONE;
+    AiSpellPolicy aiSpellPolicy = AiSpellPolicy::COUNTER_PICK;
+    bool    endlessLockAiSpell = true;
+    bool    aiFreezePilotOnly  = true; // FREEZE 试点期开关
+
+    // ---- 比分（MainWindow 维护）-------------------------
+    int     scoreP1 = 0;
+    int     scoreP2 = 0;
+
+    // ---- 无尽模式专用 ------------------------------------
+    float   totalDamageDealt = 0.f;
+    float   survivalTime     = 0.f;
+
+    // ---- 工具方法 ----------------------------------------
+    int winsNeeded() const { return bestOf / 2 + 1; }
+
+    bool isMatchOver() const {
+        return scoreP1 >= winsNeeded() || scoreP2 >= winsNeeded();
+    }
+
+    void addScore(int playerId) {
+        if (playerId == 0) scoreP1++;
+        else               scoreP2++;
+    }
+
+    void resetScores() {
+        scoreP1 = 0;
+        scoreP2 = 0;
+    }
+
+    // 法术是否对该模式可用
+    bool isSpellAvailable(Spell spell, Mode m) const {
+        return true;
+    }
+};
+
+#endif // GAMESESSION_H
