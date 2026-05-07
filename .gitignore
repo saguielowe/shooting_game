@@ -81,3 +81,15 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 TODO_FEATURES.md
+
+# Latex generated files
+*.aux
+*.bbl
+*.log
+*.blg
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
+*.tex.backup
