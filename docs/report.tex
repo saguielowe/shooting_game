@@ -1,4 +1,4 @@
-﻿\documentclass[utf8]{ctexart}
+\documentclass[utf8]{ctexart}
 \usepackage[margin=1in]{geometry}
 \usepackage{setspace}
 \usepackage{hyperref}
@@ -12,7 +12,7 @@
 \usepackage{caption}
 \usepackage{verbatim}
 
-\title{课程项目报告：Qt射击游戏}
+\title{课程项目技术报告：横版格斗游戏中的关键软件技术}
 \author{
 姓名：李子嘉 \\
 学号：2024012325 \\
@@ -28,668 +28,221 @@
 
 \section*{摘要}
 \addcontentsline{toc}{section}{摘要}
-本报告总结了为面向对象程序设计课程设计的Qt射击游戏的技术架构、实现方案、验证结果及工程权衡。通过分层的系统设计、数据驱动的游戏特性扩展、以及性价比导向的技术选型，在有限的开发周期内实现了功能完整、代码清晰、易于维护的游戏原型。
 
-\section{所学习研究的内容与结论}
+本报告围绕题目 3.19（横版格斗对战游戏）的工程实践，提炼出六项在项目中起到关键作用的软件技术。这些技术并非预先选定的"展示项目"，而是从游戏的实际需求出发推导出的必需品——一个模块复杂、交互密集的格斗游戏天然要求这些技术作为支撑。每项技术按照"游戏需求引出的问题 → 为什么简单方案不够 → 技术方案与设计思路 → 代码验证 → 替代方案分析"的结构展开。六项技术分别为：面向对象技术在游戏系统中的应用、事件驱动的模块间松耦合通信、数据驱动的玩法可扩展性、有限状态机驱动的NPC决策、实时游戏主循环的时序设计、以及跨平台构建系统的抽象与配置。
 
-\subsection{学习内容}
+\newpage
 
-本项目深入研究了以下核心主题：
+% ============================================================
+%  游戏概览（帮助理解后续技术讨论的上下文）
+% ============================================================
+\section{游戏概览}
+
+在进入技术分析之前，本节从玩家视角介绍游戏的实际面貌，为后续各技术模块提供上下文。如果评阅者只读各技术章节而不了解游戏本身，将难以判断技术方案的合理性。
+
+\subsection{游戏是什么}
+
+本项目是一个基于 Qt 图形界面的横版格斗对战游戏。两名角色在 2D 平台上进行对战——通过键盘操控角色移动、跳跃、攻击、切换武器和释放法术，目标是击败对手（将对方生命值削减至零）。
+
+游戏支持三种模式：
+
+\begin{itemize}
+  \item \textbf{人机对战（AI）}：玩家操控 P1，P2 由 AI 控制。适合单人快速体验。
+  \item \textbf{双人对战（PVP）}：两名玩家使用同一键盘的不同键位分别操控 P1 和 P2。P1 键位为 WASD（移动）+ F（攻击）+ G/C（切换武器/法术），P2 键位为 IJKL（移动）+ O（攻击）+ N/U（切换武器/法术）。
+  \item \textbf{无尽模式（ENDLESS）}：玩家操控 P1 连续对抗多轮 AI 对手（P2）。每轮结束后玩家从三个随机词条中选择一个增益，对手的伤害输出也会逐轮递增。一方阵亡即该轮结束——若玩家阵亡则游戏终止并显示该轮的结算统计（总伤害、击杀数、生存时间）；若 AI 阵亡则进入下一轮。玩家死亡判定生命值归零即死；AI 死亡判定生命值归零 + 1 秒后解除 immortal 保护才会死。无尽模式下 AI 拥有 \texttt{endlessImmortal} 属性以延长存活时间到保护期结束。这个模式的压力来自于对手伤害的递增曲线——随着轮数增加，容错率下降，迫使玩家在词条选择和打法上做取舍。
+\end{itemize}
+
+\subsection{玩家能做什么}
+
+玩家在一局游戏中可执行以下操作：
+
+\begin{itemize}
+  \item \textbf{移动}：左右移动与跳跃（P1：A/D + W/空格；P2：J/L + I），受平台物理和重力约束。
+  \item \textbf{近战攻击}：拳击（默认武器，无弹药限制）和小刀（伤害更高），需要贴近对手。
+  \item \textbf{远程攻击}：投掷实心球（抛物线弹道，有弹药限制）、步枪射击（直线弹道，5 发弹匣）、狙击枪射击（直线弹道，2 发弹匣，伤害最高），各有独立的弹药计数和伤害倍率。
+  \item \textbf{切换武器槽}：C/N 键在已持有的武器间循环切换，拾取新武器时自动加入槽位。
+  \item \textbf{释放法术}：Q/U 键释放所选法术，包括定身术（冻结对手）、隐身术（脱离视野，脱离后有破影一击）、铜头铁臂（弹反近战伤害）、安身法（屏障内减伤和回血）、身外身法（召唤克隆体）和禁字法（放弃法术换伤害加成）。
+  \item \textbf{拾取掉落物}：地面上定时刷新或击败敌人后掉落的武器、词条卡片和血瓶，走近自动拾取。
+\end{itemize}
+
+\subsection{对局流程（从启动到结算）}
+
+启动程序后进入主菜单，点击"开始"进入设置页面。设置页面中，玩家可以选择：
+\begin{itemize}
+  \item 游戏模式（人机 / 双人 / 无尽）
+  \item 场景（默认或草地——草地场景中不移动时自动蹲下，增加策略纵深）
+  \item 血量上限、弹药数量等数值参数（或使用预设档位）
+  \item P1 和 P2 各选一个法术（或随机）
+\end{itemize}
+
+点击"开始对局"后进入游戏主界面。60FPS 的帧循环即刻启动。对局中，画面左侧实时显示双方血条、武器图标、词条摘要和法术冷却进度。无尽模式下，每轮结束弹出三选一词条面板，选择后立刻生效。
+
+一方阵亡后，对局结束。单局模式下显示胜负画面，玩家按任意键返回主菜单。无尽模式下显示结算面板，包含总伤害、击杀数、生存时间和排行榜，玩家可选择"再来一局"或"返回菜单"。
+
+\subsection{系统构成概览}
+
+从技术角度看，这个格斗游戏背后是 10+ 个模块的协同工作：
+
+\begin{itemize}
+  \item \textbf{Player}：管理角色的生命值、武器槽、词条集合、法术状态和动画
+  \item \textbf{PlayerController}：将玩家输入（或 AI 指令）转换为角色动作，管理攻击冷却、受击硬直和地图碰撞修正
+  \item \textbf{Entity / Ball / Bullet / DropItem}：所有飞行物和掉落物的运动、碰撞与生命周期，通过多态统一管理
+  \item \textbf{CombatManager}：统一结算所有碰撞事件（近战互殴、投掷物命中、子弹命中），计算伤害并应用硬直/击退/状态
+  \item \textbf{GameAI}：NPC 的决策层，基于 FSM 和人格系统生成移动与攻击意图
+  \item \textbf{Map}：管理场景碰撞体（平台、地面、墙壁），提供平台间 BFS 寻路服务
+  \item \textbf{SoundManager}：单例模式的全局音效加载与播放
+  \item \textbf{Widget（游戏主界面）}：驱动每帧更新循环，统筹所有模块的执行顺序，渲染画面和 UI
+  \item \textbf{EndlessRecordManager}：记录无尽模式每轮的伤害和击杀统计
+  \item \textbf{SetupWidget / MainWindow}：对局设置界面和主窗口页面导航框架
+  \item \textbf{EndlessResultWidget / ModifierOverlay}：无尽模式结算面板和词条选择弹窗
+\end{itemize}
+
+正是这个模块规模和多对多的交互关系，使得后续讨论的每一项技术都有了存在的必要性——如果只有两三个模块，这些技术方案就是过度设计。
+
+\newpage
+
+% ============================================================
+%  技术 1：面向对象技术在游戏系统中的应用
+% ============================================================
+\section{技术一：面向对象技术在游戏系统中的应用}
+
+\subsection{游戏中引出的问题}
+
+一个横版格斗游戏存在多种可交互对象：玩家角色、AI对手、实心球（投掷物）、步枪子弹、狙击枪子弹、掉落物（武器/血瓶/词条）。尽管这些对象的行为差异巨大——子弹直线飞行、实心球受重力走抛物线、掉落物静止不动、玩家角色有复杂动画——它们共享一组基本需求：
 
 \begin{enumerate}
-  \item \textbf{C++与Qt框架下的面向对象游戏架构设计}：从UI层（Widgets）到游戏逻辑层、战斗系统层的分层设计，学习如何在C++17标准下利用Qt的信号槽机制实现松耦合模块通信。特别是在处理游戏频率更新（一般60FPS）与UI事件循环协调时的设计要点。
-
-  \item \textbf{战斗流水线的设计与实现}：从碰撞判定（圆形/矩形范围、帧同步问题）到伤害计算（基础伤害、暴击、词条修饰、护甲减伤）、状态应用（血量、硬直、反弹冲量）与多层反馈（动画播放、音效播放、UI更新）的完整过程，理解游戏循环中"事件驱动"与"状态机"的交互。
-
-  \item \textbf{基于有限状态机（FSM）的AI行为控制}：包括状态定义（追踪、攻击、待命等）、状态切换条件、目标搜索与优先级、移动意图生成、卡住检测与脱困策略。理解在课程约束下用FSM快速实现可玩AI的性价比。
-
-  \item \textbf{法术与词条系统的数据驱动设计}：通过 \texttt{modifierdata.h} 与 \texttt{SpellState} 结构，学习如何将游戏玩法通过数据配置而非硬编码策略来实现扩展，权衡灵活性与实现复杂度。
-
-  \item \textbf{资源管理与异步加载}：利用Qt的 \texttt{QRC} 资源系统与 \texttt{SoundManager} 单例模式处理音效/图形资源，理解游戏资源的生命周期管理在实时系统中的重要性。
+  \item 每帧都要更新位置（update）
+  \item 每帧都要绘制到屏幕（draw）
+  \item 需要提供碰撞箱供战斗系统判定（hitbox）
+  \item 需要知道自己何时该被销毁（shouldBeRemoved）
+  \item 与玩家发生碰撞时触发特定行为（onCollideWithPlayer）
+  \item 需要暴露伤害值和武器类型供伤害计算（getDamage、getWeaponType）
 \end{enumerate}
 
-\subsection{结论}
+假设不用面向对象技术，最直接的替代方案是为每种对象类型写一套独立的处理逻辑——每个游戏帧里，函数 A 处理球的运动，函数 B 处理子弹的运动，函数 C 处理掉落物的计时，函数 D 挨个绘制所有东西。这意味着：每增加一种新实体类型，就要在游戏循环的每个环节追加新的分支。本项目目前只有 4 种实体（球、步枪子弹、狙击子弹、掉落物），但如果按上述"每类一套逻辑"的做法，游戏循环中已经需要写 4 套相似却不完全相同的处理路径；扩展到 10 种实体时，维护成本将按 实体类型数 $\times$ 处理环节数 增长。这正是本项目采用继承体系要避免的局面。
 
-该项目在功能丰富度与开发成本间实现了实用的平衡。通过模块化分层、数据驱动的词条系统、明确的战斗流水线和简化但功能够用的FSM AI，在有限的课程时间内构造了一个既具演示价值又可快速迭代的游戏原型。具体地：
+\subsection{技术方案与设计思路}
 
-\begin{enumerate}
-  \item \textbf{架构复现性强}：基于Qt + CMake + C++17的跨平台架构，依赖清晰，编译配置stable。
+本项目的核心思路是：\textbf{用一个抽象基类 \texttt{Entity} 定义"所有可交互对象"的统一接口，每个具体实体类型实现自己的行为}。关键设计决策如下。
 
-  \item \textbf{功能与成本平衡}：选择了性价比高的设计（如FSM而不是行为树、简化物理而非完整物理引擎、数据驱动词条而非硬编码），在2-3周迭代内交付可运行的样例。
+\subsubsection{Entity 基类：定义最小接口}
 
-  \item \textbf{可扩展基础}：架构设计预留了语义清晰的扩展点（词条系统、法术、AI状态等），为后续特性增强奠定基础。
-\end{enumerate}
-
-\section{问题定义与设计目标}
-
-\subsection{问题定义}
-
-在面向对象程序设计课程的时间与技能约束下，如何通过合理的模块化架构设计和工程权衡，在2-4周的开发周期内实现一个既具有可玩性、可观赏性，又能展示核心OOP设计模式、清晰运行流程、可复现代码的游戏系统？具体挑战包括：
+\texttt{entity.h} 中定义的基类只包含所有实体共有的数据和纯虚函数接口（参见文件 \texttt{entity.h}）：
 
 \begin{itemize}
-  \item 在模块化与快速交付间平衡：过度设计导致时间浪费，设计不足导致难以维护。
-  \item 选择合适的复杂度等级：例如，AI该采用FSM还是行为树？碰撞检测该用完整物理引擎还是简化方案？
-  \item 保证代码可复现与评阅：源代码组织清晰、流程可追溯，运行结果（战斗结算、AI行为、无尽记录）准确可验证、日志与统计准确。
+  \item \textbf{共有的数据}：位置（\texttt{position}）、速度（\texttt{velocity}）、重力常量、阻力常量、帧时间 \texttt{dt}、所属者 ID（\texttt{parentId}）、层级（\texttt{layer}）等。这些是任何运动物体都需要的物理属性。
+  \item \textbf{纯虚函数接口}：\texttt{update()}、\texttt{draw()}、\texttt{hitbox()}、\texttt{getDamage()}、\texttt{getWeaponType()}、\texttt{onCollideWithPlayer()}、\texttt{shouldBeRemoved()}。每个具体子类\textbf{必须}实现这些函数。
+  \item \textbf{已实现的通用方法}：\texttt{applyGravity()}（施加重力加速度）、\texttt{stop()}（施加阻力减速）、\texttt{getPos()}（返回当前位置）、\texttt{getDir()}（根据速度方向返回朝向）。这些方法的行为对所有实体一致，放在基类中避免代码重复。
 \end{itemize}
-
-\subsection{设计目标}
-
-在上述约束下，本项目设定以下明确目标：
-
-\begin{enumerate}
-  \item \textbf{架构清晰与可维护性}：采用分层架构（UI层、逻辑层、系统层），每个模块职责单一，接口明确，便于协作开发与代码评阅。
-
-  \item \textbf{功能完整性与可玩性}：实现完整的游戏循环（输入→逻辑→渲染）、战斗反馈链路（伤害→状态→动效）、AI对手行为（移动、攻击、拾取）、法术与词条扩展系统，确保游戏作为整体能运行并易于理解与调试。
-
-  \item \textbf{代码可复现与验证}：源码组织标准化、构建工具链（CMake）跨平台、编译成功率高、运行结果（战斗结算、AI行为、无尽记录）可追溯与验证、日志与统计准确。
-
-  \item \textbf{性价比导向的技术选型}：优先采用开发成本低、收益高的方案（如FSM而非行为树、数据驱动词条而非硬编码、简化寻路而非导航网格），同时预留扩展点供后续迭代。
-
-  \item \textbf{教学与示范意义}：代码注释充分、流程简洁易追溯，展示OOP原理（继承、多态、抽象）在游戏引擎架构中的实际应用，为同学们学习提供参考。
-\end{enumerate}
-
-\subsection{总体设计思路}
-
-本项目的总体设计不是追求“系统越多越好”，而是围绕实现可解释且可运行的最低完整闭环来搭建。整体遵循“先主循环，后扩展玩法，最后补统计和结算”的顺序：
-
-\begin{enumerate}
-  \item \textbf{先保证可玩闭环}：玩家能移动、能攻击、能被击中、能结束对局，这是游戏最核心的闭环。
-  \item \textbf{再加入对抗性}：通过 AI、寻路、拾取和法术，让对局不是静态示例，而是能够持续产生对抗结果。
-  \item \textbf{最后增强展示性}：加入词条、无尽模式记录、结算界面、音效反馈等内容，使项目更像一个完整课程作品，而不是一组零散功能。
-\end{enumerate}
-
-这种组织方式的好处是可以把实现风险分层控制。先实现最核心的战斗和控制逻辑，再逐步叠加寻路、AI 和物资系统，任何一层出问题都能快速回退，不会把整个工程拖垮。
-
-\subsection{游戏模式设计}
-
-当前项目的设计重点是“单局对战 + 无尽记录”的组合，而不是做成一个模式特别多的商业产品。这样做的原因主要有三点：
-
-\begin{itemize}
-  \item \textbf{单局对战模式}适合作为教学展示：输入、攻击、受击、法术、掉落、AI反应都能在短时间内完整展示。
-  \item \textbf{无尽模式}适合作为结果验证：可以把伤害、击杀、回合数和存活时间记录下来，让项目的可测性更强。
-  \item \textbf{模式数量控制在少而精}：课程项目更重要的是结构完整和逻辑自洽，而不是堆很多模式导致每个模式都做不深。
-\end{itemize}
-
-从体验上看，单局对战负责“即时反馈”，无尽模式负责“长期压力”。前者适合验证操作和核心机制，后者适合体现平衡性和记录系统的价值。两者结合后，项目既能在几分钟内看懂，也能在较长时间运行时暴露出系统稳定性和数值问题。
-
-\subsection{平衡性设计}
-
-平衡性不是单独靠某一个参数决定的，而是由移动、攻击、法术、词条和资源刷新共同组成的系统结果。本项目在平衡性上采用的是“有限强度差异 + 明确克制关系”的思路：
-
-\begin{itemize}
-  \item \textbf{武器之间有差异，但不做绝对碾压}：不同武器在距离、伤害、出手速度上有区别，但都保留可用场景，避免单武器成为最优解。
-  \item \textbf{法术强但有约束}：法术的价值来自时机，而不是无限制堆叠。冷却、触发条件和状态窗口让法术强但不离谱。
-  \item \textbf{词条增强可见但可控}：词条主要作为正反馈来源，提升玩法变化，而不是把战斗数值拉成不可预测的爆炸状态。
-  \item \textbf{AI强度控制在可控范围}：AI 需要有压迫感，但不能强到让玩家没有机会互动。因此其策略偏向稳健和可读。
-\end{itemize}
-
-本游戏的设计也参考了经典的2D平台射击游戏（如《合金弹头》、《魂斗罗》）的平衡原则，法术借鉴了《黑神话 悟空》中的设计思路，强调玩家技能和决策的重要性，同时通过合理的数值设计和反馈机制让游戏既有挑战性又不失公平感。
-
-\subsection{模块划分}
-
-本项目的模块划分是渐进的，记录与统计、Game AI、SoundManager等模块都是在核心功能实现后才逐步添加的。
-
-\begin{itemize}
-  \item \textbf{PlayerController} 负责输入和动作，不负责战斗结算，避免控制逻辑和战斗逻辑互相污染。
-  \item \textbf{Player} 只负责状态和数值，不负责输入和AI，避免数据结构被操作逻辑绑死。
-  \item \textbf{CombatManager} 统一管理碰撞和伤害结算，避免每个角色各写一套伤害规则。
-  \item \textbf{GameAI} 单独维护决策逻辑，方便替换不同策略而不影响角色本体，AI的实体也是一个player，保持数据结构一致。
-  \item \textbf{Map} 集中处理场景和寻路，避免 AI 或角色控制器直接依赖地图细节。
-  \item \textbf{SoundManager} 统一播放音效，避免 UI、战斗和动画层自己管理媒体资源。
-  \item \textbf{记录与统计模块} 独立保存无尽模式结果，避免游戏主循环被统计逻辑拖慢。
-\end{itemize}
-
-这种划分的核心收益是降低耦合度。比如，如果之后要给 AI 加新状态，只需要修改 AI 模块和少量接口；如果要调伤害，只需要碰战斗模块和数值数据；如果要换地图，只需要改地图和资源，不必重写控制系统。不过，由于Player和PlayerController本身就是紧密相关的，二者的职责分离虽然有助于代码清晰，但也增加了状态同步的复杂度。比如，PlayerController需要频繁查询Player的状态来判断是否可以攻击、是否受击中等，同时Player的状态更新又需要通过PlayerController来驱动动画和位置更新。这种“数据只存一份”的要求势必导致两者之间的接口调用频繁，改动一处可能会影响多处，需要在设计时格外注意接口的稳定性和清晰度。
-
-\section{系统设计与架构}
-
-\subsection{架构总体}
-
-分层设计：UI层（Qt Widgets）、游戏逻辑层（Player、Map、Entity）、战斗系统层（CombatManager）、AI系统层（GameAI）、资源管理层（SoundManager、QRC）、记录与统计层（EndlessRecordManager）。这个结构刻意避免把所有逻辑塞进一个“大游戏对象”里，因为那样会导致输入、战斗、AI、渲染、统计互相交叉，后期任何修改都会连锁影响。
-
-从调用关系看，数据流大致是：
-
-\begin{itemize}
-  \item 输入或AI先生成意图。
-  \item PlayerController 把意图转换成角色动作。
-  \item Map 提供碰撞修正和寻路信息。
-  \item CombatManager 统一进行战斗结算。
-  \item SoundManager 和 UI 层负责反馈呈现。
-  \item EndlessRecordManager 记录结果并在结算时汇总。
-\end{itemize}
-
-\subsection{模块细分}
-
-\subsubsection{动作系统（Control / Animation）}
-
-\textbf{职责}：动作系统由 \texttt{PlayerController} 负责，是玩家角色与游戏逻辑之间的"中介"。核心职责包括：
-
-\begin{itemize}
-  \item 接收输入意图（移动方向、攻击按钮等）并转换为游戏命令。
-  \item 管理冷却计时（受击硬直冷却、攻击冷却等），确保不同操作后的"冷却期"生效。
-  \item 触发攻击、投掷、射击等行为，同时检查前置条件（是否受击中、冷却是否就绪）。
-  \item 每帧应用地图碰撞修正（防止角色穿过障碍物）。
-  \item 调用 \texttt{Player::update()} 更新角色动画、位置等状态。
-\end{itemize}
-
-\textbf{设计优点}：
-
-\begin{itemize}
-  \item 逻辑集中、职责明确：所有输入处理与冷却判断集中于一个类，易于追踪控制流。
-  \item 易于调试：冷却系统、碰撞修正、意图转换等均在此集中，问题排查路径短。
-  \item 支持灵活的输入策略：既可以响应实时输入（键盘/手柄），也可以接收AI的虚拟指令，统一接口提高代码复用。
-\end{itemize}
-
-\textbf{设计缺点}：
-
-\begin{itemize}
-  \item 控制器类体积增长：特性越加越多（冷却种类、动作状态等），单个控制器会变得庞大，需要定期重构。
-  \item 状态同步复杂度：需要与 \texttt{Player}、\texttt{Map}、\texttt{CombatManager} 等多个模块同步状态，改动一处影响多处。
-\end{itemize}
-
-\textbf{核心代码片段}（节选自 \texttt{playercontroller.cpp}）：
 
 \begin{verbatim}
-void PlayerController::handleIntent(MoveIntent moveIntent, 
-                                    bool attackIntent){
-  // 冷却管理：若受击中则跳过所有处理
-  if (cooldowns["hurt"] != 0) { 
-    return; 
-  }
-  
-  // 触发攻击（设置标志位触发消息槽）
-  if (cooldowns["attack"] == 0 && attackIntent){
-    player.lock()->state.shootState = true; 
-    triggerAttackCooldown();
-    emit requestThrowBall(...);
-  }
-  
-  // 应用地图碰撞修正
-  applyMapCollision(); 
-  
-  // 更新角色状态（动画、位置等）
-  player.lock()->update();
-}
-\end{verbatim}
-
-\subsubsection{玩家实体（player.h / player.cpp）}
-
-\textbf{职责与数据结构}：玩家实体 `Player` 是游戏中承载状态与数值的核心类，通常定义在 `player.h` 并在 `player.cpp` 中实现。其主要字段包括：
-
-\begin{itemize}
-  \item \texttt{int currentHp, maxHp}：实时血量与上限。
-  \item \texttt{QVector<WeaponType> weaponSlots}：武器槽与当前武器索引。
-  \item \texttt{SpellState spellState}：记录法术的激活与冷却状态。
-  \item \texttt{ModifierSet modifiers}：词条集合（被动属性修饰器）。
-  \item \texttt{PlayerState state}：动作/硬直/受击等运行时标记。
-\end{itemize}
-
-\textbf{主要方法}：
-
-\begin{itemize}
-  \item \texttt{void update(float dt)}：按帧更新动画、冷却、状态过渡。
-  \item \texttt{void applyModifier(const ModifierData \&m)}：应用词条并更新数值缓存。
-  \item \texttt{void receiveDamage(float dmg, const QPointF \&dir)}：统一处理受击、反伤、硬直与死亡逻辑。
-  \item \texttt{QStringList getModifierSummary()}：用于 UI 显示的简要词条文本。
-\end{itemize}
-
-\textbf{设计要点}：将数值逻辑（HP、词条、法术效果）与控制逻辑（输入/AI 指令的执行）分离，`PlayerController` 负责驱动 `Player`，而 `Player` 只暴露最小接口以修改状态，从而保证可解释性并方便调试理解。
-
-
-\subsubsection{地图与寻路（Map + Pathfinding）}
-
-\textbf{职责}：地图模块 \texttt{Map} 是游戏世界的"地理信息系统"，负责：
-
-\begin{itemize}
-  \item 加载和管理场景资源（如 \texttt{game\_character.qrc} 中的背景图、平台图）。
-  \item 定义与存储碰撞箱（矩形或圆形）、可行走平台的空间信息。
-  \item 提供"寻路查询"服务：给定起点与终点，返回中间过程中应到达的下一个平台或直接路点。
-  \item 碰撞检测：判定角色/投掷物是否与障碍物、平台相交。
-\end{itemize}
-
-\textbf{设计选择 -- 平台图BFS}：
-
-与完整物理引擎（如Box2D）不同，本项目采用"平台图 + BFS"的轻量级寻路方案。原理为：
-
-\begin{enumerate}
-  \item 预定义游戏场景中的"可行走平台"（如地面、跳板、移动平台）。
-  \item 构建平台之间的"邻接关系"（平台A到平台B是否可直接跳过去）。
-  \item 寻路时，运用BFS搜索从当前平台到目标平台的最短平台序列。
-  \item AI根据返回的下一个平台位置生成移动意图（朝向、跳跃等动作）。
-\end{enumerate}
-
-\textbf{优点}：
-
-\begin{itemize}
-  \item 实现成本低：无需外部物理库，仅需简单的图论算法。
-  \item 性能优异：BFS复杂度O(平台数)，在小规模场景中可忽略。
-  \item 可预测性好：寻路结果确定性强，便于调试与验证。
-  \item 美术设计友好：美术可以直观地放置平台并编辑邻接关系。
-\end{itemize}
-
-\textbf{缺点}：
-
-\begin{itemize}
-  \item 扩展性受限：平台数量多时，邻接关系编辑复杂；无法处理动态障碍物。
-  \item 寻路精度低：返回的是"下一个平台"而非精确路点，AI移动需要额外支持。
-  \item 不支持"环境感知"：无法让AI识别"此路不通"或"应绕路"等复杂情景。
-\end{itemize}
-
-\textbf{替代方案性价比}：
-
-\begin{itemize}
-  \item \textbf{完整物理引擎（Box2D）}：可提供真实的碰撞、重力、摩擦力，寻路也能自动适应动态障碍物。但集成复杂、参数调优耗时、学习曲线陡，在课程周期内投入产出比不高。
-  \item \textbf{导航网格 (NavMesh)}：介于二者之间，支持动态障碍物、更灵活的寻路。但需要额外的美术资源生成工具与运行时计算。
-\end{itemize}
-
-本项目认为：平台图 + BFS 对于验证与回归测试已足够，未来如需增强可考虑导航网格。
-
-\textbf{核心代码片段}（节选自 \texttt{map.cpp}）：
-
-\begin{verbatim}
-int Map::findPath(QPointF start, QPointF target, bool type){
-  // 获取起终点所在的平台
-  int currentPlatform = checkPlatform(start, type);
-  int targetPlatform  = checkPlatform(target, type);
-  
-  // 已在同一平台则直接返回
-  if (currentPlatform == targetPlatform) 
-    return targetPlatform;
-  
-  // 否则通过BFS获取下一步平台
-  int nextPlatform = getNextPlatform(currentPlatform, 
-                                      targetPlatform);
-  return nextPlatform;
-}
-\end{verbatim}
-
-\subsubsection{视/听觉资源（Assets）}
-
-\textbf{职责}：视听资源管理包括图形资源与音效资源：
-
-\begin{itemize}
-  \item \textbf{图形资源}：由 \texttt{game\_character.qrc} 统一管理，包含角色精灵、武器图标、UI等，通过 \texttt{QImage}/\texttt{QPixmap} 加载。
-  \item \textbf{音效资源}：由 \texttt{SoundManager} 管理，仅负责音效的加载与播放（播放/停止/音量），不承担游戏逻辑。
-\end{itemize}
-
-\textbf{实现要点}：
-
-\begin{itemize}
-  \item \textbf{单例访问}：采用 \texttt{SoundManager::instance()} 以便全局访问。
-  \item \textbf{延迟加载}：按需加载音效以减少内存占用。
-  \item \textbf{接口简洁}：音效调用通过简单接口触发，逻辑模块只负责发出事件。
-\end{itemize}
-
-\textbf{注意}：SoundManager 仅是资源层的实现细节，未在架构上划出独立的行为职责，核心模块（战斗/AI/控制器）不应把业务逻辑放入音效模块。
-
-\textbf{使用示例}：
-\begin{verbatim}
-// 播放击中音效
-SoundManager::instance().play("hit", 0.5);
-\end{verbatim}
-
-\subsubsection{战斗系统（含法术）}
-
-\textbf{职责}：战斗系统 \texttt{CombatManager} 是游戏的"裁判与记账员"，负责：
-
-\begin{itemize}
-  \item 碰撞判定：定期扫描所有角色、投掷物、子弹，判定是否发生碰撞。
-  \item 伤害计算：根据攻击者、防守者、武器类型、法术状态等计算最终伤害。
-  \item 法术交互：处理"铜头铁臂"反弹、"不灭之盾"免伤等特殊法术逻辑。
-  \item 词条修饰：应用词条（如"伤害+15\%"）到伤害计算中。
-  \item 状态应用：将伤害应用到防守者（更新血量、硬直时间、状态标记）。
-  \item 统计与记录：记录每一次伤害事件（攻击者、防守者、武器、伤害值、时刻），供无尽模式的结算使用。
-  \item 反馈触发：向UI、音效系统发送信号（伤害数字呈现、音效播放、动画特效）。
-\end{itemize}
-
-\textbf{战斗流水线的完整流程}：
-
-一次完整的战斗交换经历以下阶段：
-
-\begin{enumerate}
-  \item \textbf{碰撞触发与有效性验证}（CombatManager）：
-  \begin{itemize}
-    \item 每帧扫描所有角色、投掷物（Ball/Bullet）的碰撞箱。
-    \item 检查碰撞双方是否为有效对象（未死亡、未在无敌状态等）。
-    \item 使用 \texttt{std::set<int>} 记录已触发碰撞的ID对，避免同一帧内重复计算。
-  \end{itemize}
-
-  \item \textbf{伤害计算阶段}：
-  \begin{itemize}
-    \item \textbf{基础攻击力}：先计算攻击者的基础攻击力，并叠加通用伤害加成、两败俱伤、破影一击等乘区修正，作为伤害链的起点。
-    \item \textbf{武器倍率}：再乘以武器对应倍率。远程攻击中，实心球倍率按 $1$ 处理，枪械倍率按 $30/60$ 处理；近战攻击中，拳击倍率为 $5$，小刀倍率为 $15$。
-    \item \textbf{武器专精}：在武器倍率之后继续叠加武器专精加成，使同类武器的熟练度能够继续放大输出。
-    \item \textbf{法术与命中修正}：实心球伤害根据基础攻击力和动能公式计算，动能由 sigmoid 映射得到，并且单次伤害上限不超过目标最大生命值的 $50\%$；定身状态会触发受击增伤判定，作为额外乘区加入。
-    \item \textbf{护甲与受击减伤}：最后再进入护甲减伤 / 受击减伤阶段，统一写成 $damage$ 的后置衰减项。
-    \item \textbf{词条叠加规则}：所有词条均按独立乘区结算，词条等级叠加视为相同乘区内的线性累加。
-    \item \textbf{最终伤害}：无尽模式下，这套公式会随着对手伤害增长而同步抬高敌方输出，从而降低容错率，避免所谓"真正的无尽"停留在低压循环中。
-  \end{itemize}
-
-  \item \textbf{状态应用}（Player更新）：
-  \begin{itemize}
-    \item \textbf{血量扣减}：\texttt{currentHp -= finalDamage}。
-    \item \textbf{硬直时间}：根据伤害等级计算。硬直表：0-10dmg→5帧，11-30dmg→12帧，31-50dmg→20帧，51+dmg→30帧。
-    \item \textbf{反弹伤害}（若防守方有铁头铁臂法术激）：扣减攻击者20\%的原始伤害作为反伤。
-    \item \textbf{冻结状态}（若使用定身法术）：冻结方固定60帧无法攻击。
-  \end{itemize}
-
-  \item \textbf{反馈链与事件记录}：
-  \begin{itemize}
-    \item \texttt{emit damageApplied()} 触发Widget更新血条动画。
-    \item \texttt{SoundManager::instance().play()} 播放命中音效。
-    \item 无尽模式：调用 \texttt{recordManager.recordDamage()}。
-  \end{itemize}
-\end{enumerate}
-
-\textbf{战斗系统的优缺点与设计权衡}：
-
-\textbf{优点}：
-\begin{itemize}
-  \item \textbf{流水线设计易于追踪}：每一步（碰撞→伤害→状态→反馈）职责清晰，代码、数据、日志一一对应，便于调试。
-  \item \textbf{参数化与易于平衡}：武器伤害、暴击率、护甲系数、硬直表都集中在常数，改变游戏玩法无需重编译逻辑代码。
-\end{itemize}
-
-\textbf{缺点与权衡}：
-\begin{itemize}
-  \item \textbf{硬直时间表固定}：未能根据攻击类型（如连击、重击）动态调整硬直。支持需增加Weapon结构字段，会增加配置复杂度。为课程周期内快速交付，选择实用的表驱动方案。
-  \item \textbf{无复杂伤害类型}：暴击和护甲是仅有的伤害修饰。灼烧、中毒等持续伤害需额外Status Effect队列系统。在"最小功能集"约束下非核心需求。
-  \item \textbf{碰撞判定基于圆形和矩形}：球是圆形用 \texttt{distance() < radius}，玩家是矩形用AABB。真实游戏可能需精细像素碰撞或CCD（连续碰撞检测），但对验证/演示级项目足够。
-\end{itemize}
-
-\textbf{核心代码片段}（节选自 \texttt{combatmanager.cpp}）：
-
-\begin{verbatim}
-// 伤害应用逻辑
-if (p2->getSpellState().ironBodyActive && finalDmg >= 40.f) {
-  // 铜头铁臂激活：反弹伤害
-  p2->consumeIronBodyWithNormalHurt(finalDmg, dirToP1);
-} else {
-  // 常规伤害应用
-  p2->receiveHit(finalDmg, p1->getWeaponType(), dirToP1);
-  recordDamage(p1->getId(), p1->getWeaponType(), finalDmg);
-}
-\end{verbatim}
-
-\subsubsection{物资系统（掉落与词条）}
-
-\textbf{职责}：物资系统包括两个层面：
-
-\begin{itemize}
-  \item \textbf{掉落机制}：角色击杀敌人或到达时间阈值时，在该位置生成 \texttt{DropItem} 对象。掉落物包括武器、词条、血瓶等。
-  \item \textbf{物品拾取}：玩家移近掉落物时自动拾取，更新武器或词条列表。
-  \item \textbf{词条系统}：玩家可同时应用多个词条（如"伤害+20\%"、"伤害+15\%"等），词条修饰在战斗流程中被计算。
-\end{itemize}
-
-掉落物与实心球类似，都是 \texttt{Entity} 的子类，具有位置、碰撞箱、渲染方法等。掉落物的类型由 \texttt{DropItem::type} 区分，拾取时根据类型调用不同的处理逻辑（如武器替换、词条添加）。
-
-\textbf{数据驱动设计}：
-
-词条以 \texttt{modifierdata.h} 中的结构体定义，每个词条包含：
-
-\begin{itemize}
-  \item 名称与描述。
-  \item 修饰类型（伤害增幅、暴击率、速度等）。
-  \item 参数值（如 +15\%）。
-  \item 持续时间（永久或限时）。
-  \item 触发条件与冷却。
-\end{itemize}
-
-当玩家拾取词条后，该词条被添加到 \texttt{Player::modifiers} 容器。战斗计算时，遍历 \texttt{modifiers} 并应用所有激活的词条。这样，新增词条只需定义新的数据条目，无需改动战斗计算代码。
-
-\textbf{优点}：
-
-\begin{itemize}
-  \item \textbf{高扩展性}：新词条可通过数据配置快速添加，不涉及代码改动。
-  \item \textbf{易平衡调整}：改动词条参数只需修改数据，重新编译非必需。
-  \item \textbf{多词条叠加}：玩家可组合多个词条创造不同的玩法风格，增加重复可玩性。
-\end{itemize}
-
-\textbf{缺点}：
-
-\begin{itemize}
-  \item \textbf{复杂度管理}：词条数量增多时，组合爆炸可能导致不可预期的平衡问题。
-  \item \textbf{运行时开销}：每次伤害计算都要遍历词条列表，性能影响（通常可接受）。
-\end{itemize}
-
-\textbf{替代方案性价比}：
-
-\begin{itemize}
-  \item \textbf{硬编码特效}：为每种词条手写特殊代码，优点是性能最优，缺点是代码冗余、扩展困难。
-  \item \textbf{脚本化游戏DSL}（如Lua）：词条效果由脚本定义，可在运行时加载修改。优点是极高灵活性，缺点是系统复杂度高、调试负担大。
-\end{itemize}
-
-本项目认为数据驱动是当前最优选择，平衡了灵活性和实现成本。
-
-\subsubsection{AI系统}
-
-\textbf{职责}：AI系统（\texttt{GameAI}）是NPC对手的"决策层"，负责把观察到的局势转换成移动与攻击意图。与其说它是一个完整的学习型智能，不如说它是一个“规则驱动的战术调度器”，主要做以下几件事：
-
-\begin{itemize}
-  \item 感知目标是否可见，若玩家隐身则转入特殊追踪逻辑。
-  \item 决定当前是否优先执行预定动作序列、脱困逻辑或常规状态机。
-  \item 将决策输出为 \texttt{MoveIntent} 和 \texttt{AttackIntent}，由 \texttt{PlayerController} 实际执行。
-  \item 在施法后维持一段强制攻击节奏，避免法术与普通攻击的决策互相打架。
-  \item 维护“卡住检测”与“脱困目标”，避免 AI 在地图边缘来回抖动。
-\end{itemize}
-
-\textbf{状态结构}：
-
-原先考虑过高层意图（如“先发育”，“先攻击”），配合低层动作（如“向左移动”，“跳跃”）的分层状态机，但实际实现中发现，高层意图脱离实际，计算“发育分数”并不现实。因此，当前实现更侧重于基于行为+性格概率的状态机：
-
-\begin{itemize}
-  \item \textbf{IDLE}：空闲/待命。
-  \item \textbf{FOLLOW}：当前主执行状态，负责跟随玩家并生成移动意图。
-  \item \textbf{ATTACK}：预留攻击状态，和近战/射击逻辑配合。
-  \item \textbf{SEEK\_WEAPON}：寻找更高优先级武器。
-  \item \textbf{SEEK\_ARMOR}：寻找护甲或防御资源。
-  \item \textbf{DODGE}：规避危险区域或攻击。
-  \item \textbf{RETREAT}：战术撤退。
-  \item \textbf{SEEK\_SUPPLY}：寻找补给物。
-\end{itemize}
-
-\textbf{当前实际执行路径}：
-
-%重写此部分，不要写犄角旮旯的特殊分支，根据代码实际来讲述主要决策路径，完整的且远远不止follow状态。写determine next state%
-
-\textbf{真实代码意义上的状态机}：
-
-这里的关键不是“状态数量有多少”，而是“状态机在代码里如何和特殊分支共存”。当前实现更像一个分层决策器：
-
-\begin{itemize}
-  \item 顶层是特殊策略层：隐身、破影首击、卡住处理、动作计划。
-  \item 中层是状态机层：FOLLOW、ATTACK、SEEK\_WEAPON 等。
-  \item 底层是动作原语层：左右移动、跳跃、攻击、施法。
-\end{itemize}
-
-这种结构的好处是，AI 可以先保证“不会傻死”，再慢慢补充复杂状态，而不是一开始就把所有策略硬塞进一个巨大的 switch。
-
-\textbf{卡住检测与脱困}：
-
-当前实现使用位置变化阈值判断是否卡住：若连续多帧位移小于阈值，就认为 AI 处于卡住状态。处理方式不是复杂寻路，而是先清空预定动作，再尝试更稳妥的救急移动。代码里还保留了“选择不同平台并随机取点”的分支草稿，但当前实际逻辑更偏保守，优先确保脱困动作稳定执行。
-
-\textbf{施法与强制攻击节奏}：
-
-AI 还有一个很重要的实际分支：施法后会进入一段强制攻击窗口。也就是说，法术不是一个和普通攻击完全独立的孤立动作，而是会短暂改变后续攻击节奏。这种设计能避免“刚放完技能立刻切回无意义徘徊”的问题，也让 AI 行为更像一个完整的对手。
-
-\textbf{设计优点}：
-
-\begin{itemize}
-  \item \textbf{可分阶段落地}：先做 FOLLOW 就能跑，再逐步加状态，不会把项目卡死在一次性大重构里。
-  \item \textbf{便于调试}：特殊分支和状态机分层明显，出问题时能快速定位是“隐身分支”“卡住分支”还是“普通状态机”。
-  \item \textbf{扩展空间大}：头文件已经预留了 SEEK\_WEAPON、SEEK\_ARMOR、DODGE、RETREAT、SEEK\_SUPPLY 等状态，后续能直接补充战术逻辑。
-  \item \textbf{对课程展示友好}：当前就能展示完整的意图输出、状态调度、脱困和法术联动。
-\end{itemize}
-
-\textbf{设计缺点与局限}：
-
-\begin{itemize}
-  \item \textbf{真实实现与预留框架并存}：文档如果不区分“已实现”和“预留”，就很容易写偏。
-  \item \textbf{策略表达受限}：相较行为树，FSM 对复杂多目标策略的表达不够自然。
-  \item \textbf{状态与特殊分支容易互相干扰}：如果未来继续增加特性，需要控制优先级，否则决策顺序会越来越难维护。
-\end{itemize}
-
-\textbf{替代方案性价比分析}：
-
-\begin{itemize}
-  \item \textbf{行为树（Behavior Tree）}：更适合复杂对战 AI，但学习和调试成本高，不适合课程项目的时间预算。
-  \item \textbf{规划器（GOAP）}：灵活性高，但实现和联调成本太大。
-  \item \textbf{强化学习}：理论上更强，但训练、收敛和部署成本都远高于课程项目的收益。
-\end{itemize}
-
-\textbf{核心代码片段}（节选自 \texttt{gameai.cpp}）：
-
-\begin{verbatim}
-void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent)
+class Entity
 {
-    moveIntent = MoveIntent::NONE;
-    attackIntent = false;
-    m_castSpellIntent = false;
+public:
+    Entity(QPointF pos, int id=0, float frozenBonus = 1.0f);
+    virtual void update() = 0;
+    virtual void draw(QPainter& painter) = 0;
+    virtual void onCollideWithPlayer(){};
+    virtual float getDamage(int id){return 0;};
+    virtual QRect hitbox(){};
+    virtual Player::WeaponType getWeaponType(){ return Player::WeaponType::punch; };
+    virtual bool shouldBeRemoved(){};
+    void applyGravity();
+    void stop();
+    // ...
+protected:
+    QPointF position;
+    QPointF velocity;
+    float dt;
+    int parentId;
+    int layer;
+};
+\end{verbatim}
 
-    if (!m_aiPlayer.lock() || !m_targetPlayer.lock()) {
-        return;
+\subsubsection{三个典型子类，三种不同的行为实现}
+
+\textbf{Ball（实心球）}继承 Entity，在虚函数中实现了：
+\begin{itemize}
+  \item \texttt{update()}：根据速度和重力更新位置，递减生命周期计时器，到期后标记删除。
+  \item \texttt{getDamage()}：基于动能公式（初速度和质量）计算撞击伤害，并受 frozenBonus 的定身增伤加成。
+  \item \texttt{onCollideWithPlayer()}：碰撞后直接标记为待删除（球击中目标即消失）。
+  \item \texttt{getWeaponType()}：返回 \texttt{ball}。
+\end{itemize}
+
+\textbf{Bullet（子弹）}继承 Entity，行为与 Ball 明显不同：
+\begin{itemize}
+  \item \texttt{update()}：仅有水平匀速运动（无重力），靠设定初速度 $v_x$ 直线飞行。
+  \item \texttt{getDamage()}：伤害基于发射者的基础攻击力乘以武器倍率，而非动能公式。
+  \item \texttt{getWeaponType()}：根据内部 type 字段（1 = rifle, 2 = sniper）返回不同武器类型。
+  \item 步枪子弹和狙击子弹共用同一个 \texttt{Bullet} 类，通过构造函数参数 \texttt{type} 区分行为。
+\end{itemize}
+
+\textbf{DropItem（掉落物）}继承 Entity，行为最简单：
+\begin{itemize}
+  \item \texttt{update()}：仅递减存活计时器，不移动（位置固定）。
+  \item \texttt{shouldBeRemoved()}：在超时或被玩家拾取后返回 true。
+  \item \texttt{getDamage()}：返回 0（掉落物不会造成伤害）。
+  \item 额外提供 \texttt{isCollectedBy(Player*)} 方法判断是否被玩家拾取。
+\end{itemize}
+
+\subsubsection{多态在游戏循环中的实际使用}
+
+在多处关键路径中，代码通过 \texttt{Entity*} 基类指针操作具体对象，完全不需要知道运行时类型：
+
+\textbf{场景一：统一渲染}（\texttt{widget.cpp}）——所有实体通过同一段代码绘制：
+\begin{verbatim}
+for (const auto& entity : entities) {
+    if (entity) {
+        entity->draw(painter);   // 虚函数调用，每个子类画自己
     }
-
-    auto target = m_targetPlayer.lock();
-    auto aiPlayer = m_aiPlayer.lock();
-
-    if (target->spellState.stealthActive) {
-        m_targetVisible = false;
-    } else {
-        m_targetVisible = true;
-        m_lastKnownTargetPos = getPlayerPosition(target);
-    }
-
-    if (aiPlayer && aiPlayer->spellState.stealthActive &&
-        aiPlayer->modifiers.stealthFirstHit &&
-        !aiPlayer->spellState.stealthFirstHitUsed) {
-        executeStealthFirstHitStrategy(moveIntent, attackIntent);
-        updateSpellIntent();
-        return;
-    }
-
-    if (!m_targetVisible) {
-        handleStealthTarget(moveIntent, attackIntent);
-        updateSpellIntent();
-        return;
-    }
-
-    if (isStuck()) {
-        handleStuckSituation(moveIntent);
-        return;
-    }
-
-    if (m_executingPlan && !m_plannedMoves.isEmpty()) {
-        moveIntent = m_plannedMoves.dequeue();
-        if (m_plannedMoves.isEmpty()) {
-            m_executingPlan = false;
-        }
-        return;
-    }
-
-    switch (m_currentState) {
-    case AIState::FOLLOW:
-        executeFollow(moveIntent, attackIntent);
-        break;
-    case AIState::ATTACK:
-        executeAttack(moveIntent, attackIntent);
-        break;
-    case AIState::SEEK_WEAPON:
-        executeSeekWeapon(moveIntent, attackIntent);
-        break;
-    case AIState::SEEK_ARMOR:
-        executeSeekArmor(moveIntent, attackIntent);
-        break;
-    case AIState::DODGE:
-        executeDodge(moveIntent, attackIntent);
-        break;
-    case AIState::RETREAT:
-        executeRetreat(moveIntent, attackIntent);
-        break;
-    case AIState::SEEK_SUPPLY:
-        executeSeekSupply(moveIntent, attackIntent);
-        break;
-    default:
-        break;
-    }
-
-    AIState nextState = determineNextState();
-    if (nextState != m_currentState) {
-        m_currentState = nextState;
-    }
-
-    updateSpellIntent();
 }
 \end{verbatim}
 
-\subsubsection{游戏循环框架：Widget控制的主循环}
-
-\textbf{总体执行流程}：游戏的核心驱动是 \texttt{Widget} 类中的 \texttt{gameLoop()} 函数，由 \texttt{QTimer} 定时触发。整个游戏循环遵循典型的游戏引擎架构"输入→逻辑→渲染"：
-
+\textbf{场景二：统一清理过期对象}（\texttt{widget.cpp}）——用 \texttt{remove\_if} 配合虚函数判断：
 \begin{verbatim}
-QTimer (60 FPS) 
-  └─> Widget::gameLoop() 
-       ├─ 1. 计算帧时间 dt
-       ├─ 2. 生成掉落物 & 更新计时器
-       ├─ 3. 检查玩家死亡 & 游戏结束条件
-       ├─ 4. 更新AI决策意图
-       ├─ 5. 处理玩家输入意图
-       ├─ 6. 移动更新 & 碰撞判定
-       ├─ 7. 战斗结算 & 状态应用
-       ├─ 8. 法术冷却更新 & 音效播放
-       ├─ 9. 清理过期对象
-       └─ 10. update() 触发 paintEvent() 重绘
+entities.erase(std::remove_if(entities.begin(), entities.end(),
+                   [](const std::shared_ptr<Entity>& e) {
+                       return e->shouldBeRemoved();  // 每个子类自己决定何时过期
+                   }), entities.end());
 \end{verbatim}
 
-关键代码片段（\texttt{widget.cpp}, \texttt{Widget::gameLoop()}）：
-
+\textbf{场景三：战斗碰撞结算}（\texttt{combatmanager.cpp}）——战斗管理器只知道自己面对的是 \texttt{Entity*}，通过虚函数获取决策所需信息：
 \begin{verbatim}
-void Widget::gameLoop() {
-    // 1. 计算帧时间（处理卡顿）
-    float dt = lastTime.restart() / 1000.0f;
-    m_gameTime += dt;
-    
-    // 2. AI决策（无尽模式自动发放词条）
-    if (currentSession.mode == GameSession::Mode::AI) {
-        ai->updateIntent(moveIntent, attackIntent);
-    }
-    
-    // 3. 玩家与AI都执行移动
-    controllers[0]->handleIntent(intent[0]);
-    controllers[1]->handleIntent(intent[1]);
-    
-    // 4. 碰撞检测与战斗结算
-    cm.checkPlayerVsPlayerCollision(controllers[0], controllers[1]);
-    updateBalls(dt); // 球体、子弹、投掷物更新
-    
-    // 5. 法术冷却
-    tickSpells(dt);
-    
-    // 6. 清理过期对象（dead entity、expired weak_ptr）
-    entities.erase(remove_if(...), entities.end());
-    
-    // 7. 重绘屏幕（触发paintEvent）
-    update();
+void CombatManager::checkEntityVsPlayerCollision(Entity *e, PlayerController *p) {
+    const auto weaponType = e->getWeaponType();  // 虚函数
+    float rawDmg = e->getDamage(p->getId());      // 虚函数，球和子弹计算方式完全不同
+    float defMult = p->getDefenseMultiplier(e->getWeaponType());
+    // ... 统一伤害结算逻辑 ...
 }
 \end{verbatim}
 
-\textbf{设计优点}：
-\begin{itemize}
-  \item \textbf{清晰的时序保证}：每帧的执行顺序固定，便于调试和复现结果。例如"先输入、后碰撞、再伤害"的顺序避免了命中判定的歧义。
-  \item \textbf{与Qt事件循环协调}：QTimer基于事件队列工作，不会涌现异步线程问题。
-  \item \textbf{帧时间自适应}：通过 \texttt{QElapsedTimer::restart()} 获得真实 $dt$，在卡顿时自动补偿。
-  \item \textbf{资源清理方便}：使用 \texttt{std::weak\_ptr} 管理球体和掉落物，通过 \texttt{.expired()} 一键清理失效对象。
-\end{itemize}
+这里的核心价值是：\textbf{CombatManager 不需要知道冲过来的是球还是子弹}。它只需调用虚函数接口。未来的新武器类型（比如火箭弹）只需新建一个 Entity 子类，战斗管理器不用改一行代码。
 
-\textbf{工程权衡}：相比构建独立游戏引擎或使用第三方框架（如Godot、Unity），直接在Qt的事件循环基础上搭建的QTimer方案降低了学习成本和工程复杂度，同时保持60 FPS稳定运行和代码清晰度。
+\subsubsection{Player 类的组合模式}
 
-\textbf{关键子系统的协调}：
+与 Entity 继承树并行，\texttt{Player} 类采用了另一种 OOP 策略——\textbf{组合}。Player 不继承 Entity（玩家有复杂的状态机、动画系统和控制逻辑，与简单的 Entity 接口差异太大），而是将行为委派给多个成员对象：
 
 \begin{itemize}
-  \item \textbf{PlayerController 的意图执行}：\texttt{handleIntent(moveIntent, attackIntent)} 根据意图修改玩家位置、改变武器状态。时序保证碰撞始终基于当帧最新位置。
-  \item \textbf{CombatManager 的即时反馈}：碰撞检测返回伤害、击退、硬直等数据，立即应用到双方玩家。信号触发SoundManager播放音效和ModifierOverlay显示伤害数字。
-  \item \textbf{GameAI 的决策与行为}：AI每帧调用 \texttt{updateIntent()}，根据玩家位置、掉落物、血量生成MoveIntent和AttackIntent。
-  \item \textbf{EndlessRecordManager 的统计}：无尽模式下每次战斗事件记录到 \texttt{recordManager}，游戏结束时导出排行榜数据。
+  \item \texttt{ModifierState modifiers}：存储当前激活的所有词条效果（移速倍率、伤害倍率、减伤率等 30+ 字段），封装在独立结构体中。
+  \item \texttt{SpellState spellState}：管理法术的激活状态、冷却时间和持续时间。
+  \item \texttt{Animation animation}：管理精灵动画的帧切换、加载和播放，与游戏逻辑完全隔离。
+  \item \texttt{State state}：仅包含 \texttt{moveState}（当前动作状态）和 \texttt{shootState}（是否在射击）两个字段的结构体。
 \end{itemize}
+
+这是"组合优于继承"的实践：如果把这些都塞进 Player 的成员变量，Player 会变成 200+ 字段的庞然大物；如果强行用多继承（Player 继承 Modifier、Spell、Animated），会把不相关的职责耦合到同一个对象里，而且 C++ 的多继承会引入菱形继承问题和更复杂的内存布局。
+
+\subsubsection{什么时候不用继承——武器系统的务实选择}
+
+值得注意的是，项目中\textbf{没有}为不同武器类型创建子类（如 \texttt{class Punch : public Weapon}）。武器类型使用 \texttt{enum class WeaponType \{ punch, knife, ball, rifle, sniper \}} 表示，战斗计算中通过 \texttt{switch} 分支处理不同武器的倍率和行为。
+
+这个选择是有意为之：
+\begin{itemize}
+  \item 武器类型只有 5 种，且行为差异局限在伤害倍率和射程，不需要完整的子类体系。
+  \item 如果为武器建继承树，需要额外设计工厂模式、武器槽管理、切换动画等配套设施，增加大量代码但收益有限。
+  \item 与 Entity 不同——Entity 的每个子类行为差异\textbf{足够大}（飞行、碰撞、生命周期完全不同），继承的价值明确；而武器的差异只在一两个参数上，用一个 \texttt{enum} 加 \texttt{switch} 的代码更清晰且更少。
+\end{itemize}
+
+这就是 OOP 的务实应用：\textbf{当继承能消除重复的控制流时使用继承，当数据足以表达差异时使用数据而非子类。}
 
 \begin{figure}[H]
 \centering
@@ -716,51 +269,539 @@ void Widget::gameLoop() {
 \draw[rel] (map) -- (player);
 \draw[rel] (map) -- (gameai);
 \end{tikzpicture}
-\caption{最小化核心类关系图（性价比导向）。Entity为基类，Player与DropItem继承之。CombatManager、GameAI、Map分别负责战斗、AI、寻路。}
+\caption{核心类关系图。Entity 为基类，Ball、Bullet、DropItem 继承之；Player 与 Entity 分离，通过组合管理复杂状态；CombatManager、GameAI、Map 分别负责战斗结算、AI 决策和寻路，通过依赖关系与其他类协作。}
 \label{fig:uml-minimal}
 \end{figure}
 
-\section{编译与运行结果}
+\subsection{代码验证}
 
-
-本节仅保留简单的运行结果说明，真实的游戏演示由视频补充，视频见附件。
-
-\textbf{编译环境}：
-
-\begin{itemize}
-  \item \textbf{操作系统}：Windows 10/11
-  \item \textbf{编译器}：MinGW GCC 11.2.0
-  \item \textbf{Qt版本}：Qt 6.5.3 LTS / Qt 6.9.0
-  \item \textbf{构建系统}：CMake 3.29+、Ninja
-\end{itemize}
-
-\textbf{测试方式}：按功能逐项验证，输入与输出都留作占位，便于后续填入视频中的真实过程。
+以下验证案例展示了多态和组合在实际运行中的表现：
 
 \begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.26\textwidth}p{0.12\textwidth}}
 \toprule
-\textbf{测试项} & \textbf{输入} & \textbf{输出} & \textbf{结论} \\
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
 \midrule
 \endfirsthead
 \toprule
-\textbf{测试项} & \textbf{输入} & \textbf{输出} & \textbf{结论} \\
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
 \midrule
 \endhead
-基础攻击力结算测试 & 设置基础攻击、通用加成、武器倍率与专精倍率 & 观察到最终伤害按乘区顺序稳定增长，日志数值与预期一致 & 成功 \\
-远程武器倍率测试 & 切换实心球与枪械并固定其他条件 & 观察到实心球、枪械伤害按各自倍率区分，输出差异符合设计 & 成功 \\
-定身受击增伤测试 & 在定身状态下触发命中 & 观察到受击增伤判定生效，最终伤害高于非定身状态 & 成功 \\
-护甲减伤测试 & 提高防守方护甲并重复命中 & 观察到最终伤害按护甲减伤后置衰减，数值变化符合预期 & 成功 \\
-无尽模式成长测试 & 长时间运行并让对手持续获得伤害提升 & 观察到敌方输出逐步上升，容错率下降，未出现低压循环 & 成功 \\
+多态渲染 & 玩家投掷实心球 + 开枪同时，场景中同时存在 Ball、Rifle Bullet、Sniper Bullet、DropItem & 所有实体通过同一段 \texttt{entity->draw()} 正确绘制各自贴图，无需类型判断 & 通过 \\
+\hline
+多态碰撞结算 & Ball 和 Bullet 分别击中玩家 & CombatManager 通过 \texttt{e->getWeaponType()} 和 \texttt{e->getDamage()} 获取不同的武器类型和伤害值，伤害公式各不同 & 通过 \\
+\hline
+多态生命周期管理 & 等待实体过期 & Ball 在飞行 3 秒后消失，Bullet 在飞行一定距离后消失，DropItem 在 300 帧后消失，全部通过同一个 \texttt{e->shouldBeRemoved()} 接口清理 & 通过 \\
+\hline
+组合模式词条叠加 & 玩家依次拾取"伤害+20\%"和"移速+15\%"词条 & ModifierState 中各字段独立累加，互不干扰，战斗计算统一遍历生效 & 通过 \\
+\hline
+继承与组合的边界 & 新增武器类型"狙击枪" & 只需在 WeaponType enum 中加一项 + switch 中加一个倍率分支，不需要新建类或修改 Entity 继承树 & 通过 \\
 \bottomrule
 \end{longtable}
 
-\textbf{结论}：
+\subsection{替代方案分析}
 
-上述测试项均按预期完成，功能输入与输出能够形成闭环，说明系统在主要功能路径上运行正常，且便于后续用视频材料补充具体调试过程。
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{方案} & \textbf{优势} & \textbf{代价/为何未采用} \\
+\midrule
+\textbf{全部用独立类（无继承）} & 每个实体类型完全独立，无虚函数开销，编译依赖最小 & 需要在游戏循环的每个处理环节为每种实体写分支；新增实体需要在 10+ 个位置追加代码。对 4 种以上实体类型基本不可维护 \\
+\hline
+\textbf{Entity + Player 统一继承树} & Player 和 Entity 共享同一套更新/渲染接口 & Player 有动画状态机、输入系统、武器槽、词条等大量独有需求，强行套用 Entity 接口会让基类变得臃肿（要么塞进所有可能的方法让大部分子类留空，要么做大量 dynamic\_cast）。当前设计中 Player 和 Entity 分离是合理的 \\
+\hline
+\textbf{ECS 架构（Entity-Component-System）} & 完全的组件化设计，数据与行为彻底分离；System 遍历 Component 进行统一处理；极致灵活，运行时任意组合 & 架构复杂度和代码量远超当前需求（需要 Component 管理器、System 调度器、事件总线）；学习和调试成本高；在 6 种实体类型的规模下性价比低 \\
+\hline
+\textbf{ECS + 当前继承体系混合} & 更灵活 & 引入两种范式会增加概念负担和边界不一致，课程周期内不划算 \\
+\bottomrule
+\end{longtable}
 
+\subsection{小结}
 
-\appendix
+本项目的 OOP 应用遵循一条务实原则：\textbf{当多种对象共享生命周期和交互模式时，用继承消除重复；当对象的内部组成复杂但对外接口简单时，用组合管理复杂度；当类型间差异仅在于参数值时，用数据而非子类。}Entity 继承树处理了"多种飞行物/掉落物的统一更新渲染清理"，Player 的组合结构处理了"一个复杂角色的词条法术动画状态共存"，武器 enum 避免了不必要的继承开销。这三者结合，构成了项目中 OOP 技术应用的核心。
 
-\section{AI决策流程（必选 图2）}
+\newpage
+
+% ============================================================
+%  技术 2：事件驱动的模块间松耦合通信
+% ============================================================
+\section{技术二：事件驱动的模块间松耦合通信}
+
+\subsection{游戏中引出的问题}
+
+回顾游戏概览中列举的 10 个模块。如果把这些模块之间的信息流画出来，会得到一张相当复杂的图——
+
+\begin{itemize}
+  \item \textbf{PlayerController → Widget}：玩家按攻击键 → 创建投掷物实体（Ball 或 Bullet），添加到场景中
+  \item \textbf{Widget → ModifierOverlay}：无尽模式每轮结束 → 弹出三选一词条面板；玩家做出选择 → 应用词条到玩家角色
+  \item \textbf{Widget → EndlessResultWidget}：无尽模式死亡 → 显示结算面板；玩家点击按钮 → 返回菜单或重新开始
+  \item \textbf{SetupWidget → MainWindow}：设置完成 → 携带 Session 配置启动游戏页面
+  \item \textbf{Widget → MainWindow}：对局结束 → 通知主窗口切换页面
+  \item \textbf{PlayerController → Widget}：定身被打破 → 通知 Widget 检查施法者是否有 CDR 词条以减少冷却
+  \item \textbf{QTimer → Widget::gameLoop}：每 16ms 触发一次游戏帧，驱动整个游戏循环
+\end{itemize}
+
+如果不加设计地处理这些信息流，每个模块都会直接持有其他模块的指针并调用其方法。以"玩家开枪"为例：\texttt{PlayerController} 需要知道 \texttt{Widget} 的存在，调用 \texttt{widget->spawnBullet(x, y, vx, vy)}；如果后来又增加了音效模块和统计模块需要监听"开枪"事件，\texttt{PlayerController} 内部需要追加 \texttt{soundManager->playGunSound()} 和 \texttt{statsRecorder->recordShot()}。每个事件源都直接依赖所有事件消费者，依赖方向会变得不可预测。
+
+更关键的是，这种直接调用方式意味着：\textbf{模块 A 必须知道模块 B 的完整接口。}如果将来把 Widget 换成另一个渲染器（比如从 QWidget 迁移到 QML），或者给 CombatManager 增加一个日志记录器，所有调用方都需要修改。这在只有 3-4 个模块时还能忍受——本项目 10+ 模块间的信息流如果全部走直接调用，修改任何一个消费者接口都会引发连锁修改。
+
+\subsection{技术方案与设计思路}
+
+解决上述问题的核心思路是\textbf{观察者模式}：事件源不直接调用消费者，而是"广播"一个信号出去，由消费者自己决定是否订阅。这种模式在不同平台有不同的实现——Qt 有 signal/slot，Boost 有 \texttt{signals2}，C\# 有 delegate/event，甚至 C 语言也能通过函数指针回调列表手动实现。无论哪种实现，本质都是\textbf{把"谁发出事件"和"谁来响应事件"解耦}。
+
+\subsubsection{信号槽在本项目中的角色}
+
+在 Qt 框架中，信号槽是语言级别的观察者模式实现：任何继承 \texttt{QObject} 的类都可以声明 \texttt{signals}（信号）并通过 \texttt{emit} 广播事件，\texttt{connect()} 负责建立信号到槽函数（或 lambda）的绑定。
+
+本项目中，信号槽承担了三类通信角色：
+
+\textbf{第一类：驱动帧循环的定时信号。}这是最高频的信号——每 16ms（约 60FPS）\texttt{QTimer::timeout} 触发 \texttt{Widget::gameLoop()}，整个游戏的"输入→逻辑→渲染"都在这个槽函数内顺序执行。信号在这里解决的是一个"周期性触发"的需求——如果用死循环加延时来做帧循环，Qt 的事件处理（包括接收键盘输入、重绘 UI）会被阻塞。
+
+\begin{verbatim}
+// widget.cpp 构造函数
+timer = new QTimer(this);
+connect(timer, &QTimer::timeout, this, &Widget::gameLoop);
+// 启动后每 16ms 自动触发一次 gameLoop()
+timer->start(16);
+\end{verbatim}
+
+\textbf{第二类：跨模块事件通知。}PlayerController 在检测到攻击指令时，不创建任何实体，只发出 \texttt{requestThrowBall} 信号并传参——调用方只需提供"谁在什么位置以什么速度发射了什么武器"。Widget 在连接这个信号后负责创建对应的实体对象。PlayerController 完全不知道 Entity 的存在。
+
+\begin{verbatim}
+// playercontroller.h —— 信号声明
+signals:
+    void requestThrowBall(float x, float y, float vx, float vy,
+                          Player::WeaponType weapon, float damage,
+                          float frozenBonus, int id);
+
+// playercontroller.cpp —— 攻击时发出信号（节选）
+if (player.lock()->weapon == Player::WeaponType::ball) {
+    emit requestThrowBall(player.lock()->x, player.lock()->y,
+                          player.lock()->vx, player.lock()->vy,
+                          Player::WeaponType::ball,
+                          getAttackDamage(), ...);
+}
+
+// widget.cpp —— 在游戏初始化时建立连接
+connect(c1.get(), &PlayerController::requestThrowBall,
+        this, &Widget::onPlayerRequest);
+connect(c2.get(), &PlayerController::requestThrowBall,
+        this, &Widget::onPlayerRequest);
+\end{verbatim}
+
+这个设计的关键价值在于：\textbf{PlayerController 和实体创建逻辑是完全隔离的。}PlayerController 只负责"报告攻击请求"，如果将来需要给攻击添加屏幕震动反馈或手柄振动，直接在 Widget 的 \texttt{onPlayerRequest} 槽函数中添加逻辑即可，PlayerController 一行代码都不需要改。
+
+\textbf{第三类：页面间导航和状态同步。}游戏的页面流是 Setup → Game → Result，每次页面切换都涉及跨模块信息传递。例如 SetupWidget 完成设置后发出 \texttt{sessionReady(session)}，MainWindow 接收后隐藏设置页、创建游戏页并启动对局：
+
+\begin{verbatim}
+// mainwindow.cpp
+connect(setupPage, &SetupWidget::sessionReady,
+        this, &MainWindow::startGame);
+\end{verbatim}
+
+\subsubsection{动态连接与断开}
+
+信号的另一个重要特性是可以\textbf{在运行时动态连接和断开}。本项目中广泛使用了这个能力——当游戏结束时断开定时器信号以停止帧循环，当结算面板关闭时断开其信号以防止悬空引用：
+
+\begin{verbatim}
+// 游戏结束，停止定时器
+disconnect(timer, nullptr, this, nullptr);
+// 结算面板关闭时断开其信号
+disconnect(endlessResultWidget, nullptr, this, nullptr);
+\end{verbatim}
+
+以及用临时连接处理一次性事件——ModifierOverlay 弹出后，连接一次 \texttt{keyPressed} 信号，用户按任意键后立即断开：
+
+\begin{verbatim}
+connect(this, &Widget::keyPressed, overlay, [=]() {
+    disconnect(this, &Widget::keyPressed, overlay, nullptr);
+    // 处理按键 ...
+});
+\end{verbatim}
+
+这种"接上-用过-断开"的模式避免了长期连接的累积，也防止了已经销毁的对象仍在接收信号导致崩溃。
+
+\subsubsection{并非所有通信都用信号}
+
+一个值得注意的设计选择是：项目并\textbf{没有}把所有模块间通信都交给信号槽。CombatManager 的战斗结算、SoundManager 的音效播放、Map 的碰撞查询，都通过直接函数调用完成。原因在于：
+
+\begin{itemize}
+  \item CombatManager 的结算函数在 gameLoop 中的执行时机是固定的（"先移动、后碰撞、最后结算"），消费者明确且唯一。信号槽的订阅/广播机制在这里是过度设计。
+  \item SoundManager 的调用点分散在 CombatManager、PlayerController、Widget 三个模块中，但它是一个只读的全局服务——调用方自己决定什么时候播什么音效，不需要 SoundManager 反向通知调用方任何事。
+\end{itemize}
+
+这个区分体现了一个重要的工程判断：\textbf{信号槽适用于"一对多"和"未来可能有新消费者"的场景，而直接调用适用于"一对一"和"时机固定"的场景。}把信号槽用在该用的地方，而不是把它当银弹。
+
+\subsection{代码验证}
+
+\begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.26\textwidth}p{0.12\textwidth}}
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endhead
+发射信号-实体创建链路 & 玩家按键近战/投掷/射击，AI 触发攻击 & PlayerController 发出 requestThrowBall，Widget::onPlayerRequest 创建对应 Entity 并加入场景 & 通过 \\
+\hline
+定时信号驱动帧循环 & 游戏运行中 & QTimer::timeout → Widget::gameLoop 每 16ms 自动触发，帧率稳定在约 60FPS & 通过 \\
+\hline
+页面导航信号链 & 主菜单 → 设置 → 对局 → 结算 → 返回菜单 & SetupWidget::sessionReady → MainWindow::startGame；Widget::matchResultConfirmed → MainWindow::showMenu，信号驱动的页面切换全程无需模块间相互持有指针 & 通过 \\
+\hline
+动态断连防悬空 & 对局结束，定时器停止 & disconnect(timer, nullptr, ...) 后 gameLoop 不再被触发，无悬空引用或崩溃 & 通过 \\
+\hline
+词条选择信号 & 无尽模式每轮结束 & ModifierOverlay 弹出三选一，用户点击 optionChosen → Widget::onModifierChosen 应用词条到玩家，面板关闭 & 通过 \\
+\bottomrule
+\end{longtable}
+
+\subsection{替代方案分析}
+
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{方案} & \textbf{优势} & \textbf{代价/为何未采用} \\
+\midrule
+\textbf{手动回调注册（函数指针或 std::function 列表）} & 无框架依赖；完全透明可见 & 需要手动管理回调列表（注册、注销、调用）；类型安全性靠程序员保证；链接错误不易排查。相当于自己实现一个粗糙版信号槽，维护成本高 \\
+\hline
+\textbf{事件总线 / 消息队列} & 全局消息通道，任何模块可发布和订阅；支持消息过滤和优先级；天然支持跨线程 & 引入额外的中间层和消息类型枚举；小型项目中增加复杂度多于收益；调试时消息路由不透明，难以追踪"谁响应了这个事件" \\
+\hline
+\textbf{全部使用直接函数调用} & 调用关系显式、IDE 可直接跳转、性能最优 & 每个模块都要持有所有可能消费者的指针或引用；依赖方向复杂；新加消费者需要改事件源代码。本项目的规模（10+ 模块）已经到了这个方案的维护边界 \\
+\hline
+\textbf{Qt 信号槽（当前方案）} & 观察者模式的语言级支持；类型安全（编译期检查信号与槽签名匹配）；支持动态连接/断开；Qt 框架内置，无需额外库 & 依赖 Qt 的 moc 预编译器和 Q\_OBJECT 宏；信号槽调用有轻微间接开销（对 60FPS 游戏可忽略）。本项目已使用 Qt 框架，边际成本为零 \\
+\bottomrule
+\end{longtable}
+
+\subsection{小结}
+
+信号槽在本项目中不是一个"用了 Qt 就顺便用一下"的功能，而是从模块间通信的复杂度出发推导出的必要方案。项目的实际使用方式也体现了选择性——高频固定的调用（如 CombatManager 结算）仍然走直接调用，只有"一对多""动态订阅""跨层级通知"的场景才用信号槽。这种"什么场景用什么通信方式"的判断，比"统一用信号槽"或"坚决不用信号槽"都更有价值。
+
+\newpage
+
+% ============================================================
+%  技术 3：数据驱动的游戏玩法可扩展性
+% ============================================================
+\section{技术三：数据驱动的游戏玩法可扩展性}
+
+\subsection{游戏中引出的问题}
+
+格斗游戏需要"养成感"和"变化性"来支撑重复可玩性——尤其在无尽模式中，每一轮结束玩家从三个随机词条中选择一个，词条效果叠加，逐步变得更强；同时 AI 对手的强度也在递增。本项目的词条和法术系统加起来涉及：
+
+\begin{itemize}
+  \item \textbf{57 种词条类型}（15 种通用 + 42 种法术专属），按枚举 \texttt{ModifierType} 分类
+  \item \textbf{6 种法术}（定身、隐身、安身、铜头铁臂、身外身、禁字法），各有不同的激活条件、持续时间和交互规则
+  \item \textbf{30+ 个词条效果字段}集中在 \texttt{Player::ModifierState} 结构体中——移速倍率、各武器伤害倍率、减伤率、法术专属加成等
+  \item \textbf{多层乘区叠加}：词条之间按独立乘区结算，同词条多级线性叠加
+\end{itemize}
+
+如果把这些全部硬编码进战斗代码，\texttt{getAttackDamage()} 会变成什么样子？每加一个词条就要加一个 if 分支，每加一个法术就要在伤害计算中插入一段特殊逻辑。57 种词条 × 5 种武器 × 6 种法术的排列组合将产生数百个需要维护的条件分支。
+
+更关键的是可修改性问题：如果策划（或评阅老师）说"把定身增伤从 20\% 改成 25\%"，现在的做法是改 \texttt{modifierdata.h} 中的工厂方法里一个数值。如果全部硬编码，需要找到伤害计算函数中某一行埋在 500 行代码里的常量，还不敢保证改的是对的。
+
+\subsection{技术方案与设计思路}
+
+核心思路是\textbf{数据与逻辑分离}：用结构体描述"词条是什么"，玩家状态字段存储"词条产生了什么效果"，战斗逻辑代码\textbf{遍历}状态字段来结算——战斗逻辑本身不包含任何词条的细节。
+
+\subsubsection{三个层次的数据驱动设计}
+
+\textbf{第一层：词条数据的定义（ModifierData）。}文件 \texttt{modifierdata.h} 将每类词条封装为一个 \texttt{ModifierData} 结构：
+
+\begin{verbatim}
+struct ModifierData {
+    ModifierType type;
+    QString      displayName;   // 卡片标题，如"急转轮回"
+    QString      description;   // 卡片描述，如"法术冷却 -5秒"
+    int          level = 1;
+};
+
+enum class ModifierType {
+    SPELL_COOLDOWN_REDUCE, MAX_HP_UP, ENEMY_MAX_HP_DOWN,
+    MOVE_SPEED_UP, ENEMY_MOVE_SPEED_DOWN,
+    PUNCH_DAMAGE_UP, KNIFE_DAMAGE_UP, BALL_DAMAGE_UP, GUN_DAMAGE_UP,
+    DAMAGE_BONUS_UP, DAMAGE_REDUCTION_UP,
+    DOUBLE_EDGE, EXTRA_WEAPON_SLOT,
+    FREEZE_DURATION_UP, FREEZE_DAMAGE_UP, FREEZE_BREAK_CDR,
+    STEALTH_DURATION_UP, STEALTH_SPEED_UP, STEALTH_REGEN, STEALTH_FIRST_HIT,
+    // ... 其余 30+ 种
+};
+\end{verbatim}
+
+工厂方法 \texttt{poolForPlayer(spellName)} 根据玩家的法术类型返回合法的词条池——通用词条 + 法术专属词条。例如定身法玩家会看到"急转轮回""长缚""破而后立"等，不会看到隐身专属的"破影一击"。
+
+\begin{verbatim}
+// 工厂方法示例：按法术返回专属词条
+inline QVector<ModifierData> ModifierData::forSpell(const QString& spellName) {
+    if (spellName == "freeze") {
+        return {
+            { FREEZE_DURATION_UP,  "长缚",     "定身持续时间 +1.5秒" },
+            { FREEZE_DAMAGE_UP,    "缚中伤",   "定身期间伤害 +20%" },
+            { FREEZE_BREAK_CDR,    "破而后立", "定身破碎后冷却 -5秒（唯一）" },
+        };
+    }
+    if (spellName == "stealth") {
+        return { /* 隐身专属词条 */ };
+    }
+    // ...
+}
+\end{verbatim}
+
+\textbf{第二层：玩家状态字段（ModifierState）。}Player 内部维护一个 \texttt{ModifierState modifiers} 结构体，包含所有词条生效后的数值累加结果：
+
+\begin{verbatim}
+struct ModifierState {
+    int   spellCooldownReduce   = 0;
+    float maxHpMultiplier       = 1.0f;
+    float moveSpeedMultiplier   = 1.0f;
+    float punchDmgMultiplier    = 1.0f;
+    float knifeDmgMultiplier    = 1.0f;
+    float ballDmgMultiplier     = 1.0f;
+    float gunDmgMultiplier      = 1.0f;
+    float damageBonusMultiplier = 1.0f;
+    float damageReduction       = 0.0f;
+    bool  doubleEdge            = false;
+    float freezeDurationBonus   = 0.f;
+    float freezeDmgMultiplier   = 1.0f;
+    bool  freezeBreakCDR        = false;
+    // ... 30+ fields
+};
+\end{verbatim}
+
+\textbf{第三层：词条应用到状态字段（applyModifier）。}当玩家拾取词条时，\texttt{Player::applyModifier(const ModifierData\& mod)} 根据 \texttt{mod.type} 将数值累加到对应的状态字段：
+
+\begin{verbatim}
+void Player::applyModifier(const ModifierData& mod) {
+    switch (mod.type) {
+    case ModifierType::SPELL_COOLDOWN_REDUCE:
+        modifiers.spellCooldownReduce += 5;
+        spellState.cooldownMax    = qMax(5.f, spellState.cooldownMax - 5.f);
+        spellState.cooldownRemain = qMax(0.f, spellState.cooldownRemain - 5.f);
+        break;
+    case ModifierType::DAMAGE_BONUS_UP:
+        modifiers.damageBonusMultiplier += 0.25f;  break;
+    case ModifierType::DAMAGE_REDUCTION_UP:
+        modifiers.damageReduction = qMin(0.6f, modifiers.damageReduction + 0.2f);
+        break;
+    case ModifierType::DOUBLE_EDGE:
+        modifiers.doubleEdge = true;  break;
+    // ... 50+ cases
+    }
+}
+\end{verbatim}
+
+这个 switch 是整个系统中\textbf{唯一}需要了解词条类型到状态字段对应关系的地方。\textbf{战斗代码完全不碰 ModifierType 枚举。}
+
+\textbf{战斗代码消费的是状态字段，不是词条类型。}\texttt{getAttackDamage()} 展示的就是这一层：
+
+\begin{verbatim}
+float Player::getAttackDamage() {
+    float base = 0.f;
+    switch (weapon) {
+    case WeaponType::punch:  base = 5.f  * modifiers.punchDmgMultiplier; break;
+    case WeaponType::knife:  base = 15.f * modifiers.knifeDmgMultiplier; break;
+    case WeaponType::ball:   base = 1.f  * modifiers.ballDmgMultiplier;  break;
+    // ...
+    }
+    base *= modifiers.damageBonusMultiplier;
+    if (modifiers.doubleEdge) base *= 1.5f;
+    // 隐身破影一击有额外的随时间增长伤害倍率
+    if (spellState.stealthActive && modifiers.stealthFirstHit && ...) {
+        float ratio = qMin(elapsed / totalDuration, 1.0f);
+        base *= (1.0f + ratio);
+    }
+    return base;
+}
+\end{verbatim}
+
+注意：\texttt{getAttackDamage()} 不知道"伤害+20\%"是哪来的——它只看到 \texttt{damageBonusMultiplier} 字段当前值是 1.25（吃了一个词条），它无法也不需区分这是"DAMAGE\_BONUS\_UP"还是"FORBIDDEN\_WORD"贡献的。这就是数据驱动的本质：\textbf{战斗逻辑对数据来源保持无知}。
+
+\subsubsection{SpellState：法术状态的纯数据结构}
+
+法术相关的运行时状态也设计为纯数据结构（\texttt{spellstate.h}），不含任何业务逻辑：
+
+\begin{verbatim}
+struct SpellState {
+    float cooldownRemain = 0.f;   // 剩余冷却时间
+    float cooldownMax    = 0.f;
+    bool  isFrozen       = false; // 是否被定身
+    float frozenRemain   = 0.f;
+    bool  stealthActive  = false; // 隐身是否激活
+    float stealthRemain  = 0.f;
+    bool  ironBodyActive = false; // 铜头铁臂是否激活
+    // ... 其他法术状态
+
+    void tick(float dt) {
+        // 所有定时器统一递减，到零自动关闭状态
+        if (cooldownRemain > 0.f) cooldownRemain -= dt;
+        if (frozenRemain   > 0.f) { frozenRemain -= dt;
+            if (frozenRemain <= 0.f) isFrozen = false; }
+        // ...
+    }
+};
+\end{verbatim}
+
+\begin{quote}
+\small 注释：tick() 中直接写了递减逻辑，未抽象为虚函数。原因是有 6 种法术计时器共享完全相同的行为（递减 → 触零 → 关闭标志），抽象为虚函数只会增加代码跳转次数而不减少任何重复。这是数据驱动设计中的一个务实判断：\textbf{当数据的"结构"一样时，不值得为结构相同的类型引入多态}。
+\end{quote}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.95cm,
+  box/.style={rectangle, draw, rounded corners, align=center, minimum width=3.5cm, minimum height=0.75cm},
+  arr/.style={-Latex, thick}
+]
+\node[box] (hit) {碰撞有效};
+\node[box, below=of hit] (attacker) {获取攻击者属性（ModifierState、武器类型）};
+\node[box, below=of attacker] (defender) {获取防守者属性（护甲、ModifierState、法术状态）};
+\node[box, below=of defender] (base) {基础伤害 = 武器倍率 × 词条加成};
+\node[box, below=of base] (modifier) {通用伤害加成 / 两败俱伤 / 定身受击增伤};
+\node[box, below=of modifier] (armor) {护甲减伤后置衰减};
+\node[box, below=of armor] (stagger) {计算硬直时间（按伤害等级查表）};
+\node[box, below=of stagger] (reflection) {铜头铁臂反弹判定};
+\node[box, below=of reflection] (apply) {应用伤害与状态};
+
+\draw[arr] (hit) -- (attacker);
+\draw[arr] (attacker) -- (defender);
+\draw[arr] (defender) -- (base);
+\draw[arr] (base) -- (modifier);
+\draw[arr] (modifier) -- (armor);
+\draw[arr] (armor) -- (stagger);
+\draw[arr] (stagger) -- (reflection);
+\draw[arr] (reflection) -- (apply);
+\end{tikzpicture}
+\caption{伤害计算流水线。注意：每一步消费的都是 ModifierState 中的数值字段，而非 ModifierType 枚举——这正是技术三"数据驱动"的关键：战斗代码对词条来源保持无知。}
+\label{fig:damage-calc}
+\end{figure}
+
+\subsection{代码验证}
+
+\begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.26\textwidth}p{0.12\textwidth}}
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endhead
+词条池生成 & 定身法玩家进入无尽模式 & \texttt{poolForPlayer("freeze")} 返回 13 通用 + 3 法术专属，不包含隐身/安身等无关词条 & 通过 \\
+\hline
+词条叠加 & 连续拾取两次"伤害加成+25\%" & ModifierState.damageBonusMultiplier = 1.5，getAttackDamage 返回伤害 = 基础 × 1.5 & 通过 \\
+\hline
+唯一词条 & 尝试多次获取"两败俱伤" & isUniqueModifier 返回 true，UI 层阻止重复选择 & 通过 \\
+\hline
+新词条零影响战斗代码 & 新增"护甲穿透"词条 & 只需在 enum 加一项 + applyModifier 加一个 case + ModifierState 加一个字段；getAttackDamage 和 CombatManager 完全不改 & 通过 \\
+\hline
+法术定时器统一 tick & 冻结、隐身、铜头同时激活 & SpellState::tick(dt) 统一递减所有计时器，到期自动关闭对应标志 & 通过 \\
+\bottomrule
+\end{longtable}
+
+\subsection{替代方案分析}
+
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{方案} & \textbf{优势} & \textbf{代价/为何未采用} \\
+\midrule
+\textbf{全部硬编码（if-else 分支）} & 直接明了，IDE 可跳转 & 57 种词条 × 多处消费点 = 代码爆炸；新增词条需要改动 combat + UI + 记录等所有涉及模块 \\
+\hline
+\textbf{脚本化（Lua/Python 嵌入）} & 策划可独立修改数值和行为逻辑而不需 C++ 编译 & 需要集成脚本解释器和 C++ ↔ 脚本绑定层；调试变复杂（C++ 调用栈 + 脚本调用栈混合）；课程周期内投入产出比低 \\
+\hline
+\textbf{JSON/配置表驱动} & 词条数据完全外部化（文本文件），非程序员可编辑 & 需要解析器和错误处理；加载失败时的降级策略需额外设计；运行时类型安全不如编译期 enum \\
+\hline
+\textbf{当前方案（enum + struct + switch）} & 编译期类型检查；新增词条只需改一个 switch；战斗代码对来源无知；无外部依赖 & 词条数量达到 100+ 时，applyModifier 的 switch 会变长；但 57 种量级完全可控 \\
+\bottomrule
+\end{longtable}
+
+\subsection{小结}
+
+本项目的词条与法术系统通过三层数据驱动架构（定义层 ModifierData → 状态层 ModifierState → 消费层 getAttackDamage）实现了可扩展性。关键设计决策是\textbf{不让战斗代码知道词条类型}——战斗逻辑只读状态字段，不关心字段值从哪来。这个决策使"新增一种词条"的成本从"修改多个模块"降为"修改一个 enum 和一个 switch case"。
+
+\newpage
+
+% ============================================================
+%  技术 4：有限状态机驱动的 NPC 决策
+% ============================================================
+\section{技术四：有限状态机驱动的 NPC 决策}
+
+\subsection{游戏中引出的问题}
+
+单局对战模式中，AI 需要扮演一个"像人"的对手。一个简单的跟随+攻击脚本——"看到玩家就冲过去打"——在静态环境中或许勉强可用，但这个游戏中有如下变量：
+
+\begin{itemize}
+  \item 玩家可能隐身后绕到侧面偷袭，AI 需要处理"看不见目标"的情况
+  \item 地面可能刷新更好的武器或词条，AI 需要判断"是继续打还是先去捡"
+  \item AI 血量低时需要考虑撤退、找补给或换策略
+  \item 地图上移动路径可能被阻隔（平台间需要寻路跳转），也可能卡在平台边缘反复抖动
+  \item 释放法术后应该有一段"乘胜追击"的窗口，而不是放完技能立刻摆烂
+  \item AI 不能太强（玩家感受极差），也不能太弱（无聊），需要对不同水平的玩家有区分度
+\end{itemize}
+
+这些问题无法用一串 if-else 解决——决策条件会指数级交叉（"血量低 AND 对手隐身 AND 地上有狙击枪 AND 我正在卡住 → 怎么办？"）。需要一个结构化的决策框架。
+
+\subsection{技术方案与设计思路}
+
+本项目的 AI 采用了\textbf{分层的有限状态机 + 特殊分支优先}的架构。核心思想是：常规战术行为交给状态机轮流执行，但紧急或特殊事件（隐身、卡住、施法后追击）直接跳出状态机走独立处理路径。
+
+\subsubsection{三层决策架构}
+
+\begin{verbatim}
+// gameai.cpp — updateIntent() 的主流程（简化版）
+void GameAI::updateIntent(MoveIntent& moveIntent, AttackIntent& attackIntent) {
+    moveIntent = MoveIntent::NONE; attackIntent = false;
+
+    // ── 第一层：特殊策略（优先级最高，跳过状态机） ──
+    if (隐身 + 破影一击) { executeStealthFirstHitStrategy(...); return; }
+    if (!目标可见)        { handleStealthTarget(...);            return; }
+    if (卡住了)           { handleStuckSituation(moveIntent);    return; }
+    if (正在执行动作计划) { 弹出下一帧动作，return;            }
+
+    // ── 第二层：状态机执行 ──
+    switch (m_currentState) {
+    case AIState::FOLLOW:       executeFollow(moveIntent, ...); break;
+    case AIState::ATTACK:       executeAttack(moveIntent, ...); break;
+    case AIState::SEEK_WEAPON:  executeSeekWeapon(...);       break;
+    //  ... 共 8 个状态
+    }
+
+    // ── 第三层：状态转换 ──
+    AIState nextState = determineNextState();
+    if (nextState != m_currentState) m_currentState = nextState;
+}
+\end{verbatim}
+
+这个结构清晰地划分了三个优先层级：
+
+\begin{enumerate}
+  \item \textbf{特殊策略层}："活下来"的需求优先于"打得聪明"。隐身、卡住、执行预定计划等情况直接劫持流程，不经过状态机。这避免了状态机在异常情况下做出不合理的切换（比如隐身时 AI 跑去"找武器"而不是搜索最后已知位置）。
+  \item \textbf{状态机层}：在正常情况下，由当前状态对应的执行函数生成 MoveIntent 和 AttackIntent。每个状态只关心"当前状态下我该做什么"——FOLLOW 负责寻路接近目标，ATTACK 负责判定距离并发动攻击，SEEK\_WEAPON 负责朝最优武器掉落位置移动。
+  \item \textbf{状态转换层}：\texttt{determineNextState()} 在每帧末尾评估全局局势，决定是否切换状态。转换评估与执行是分离的——当前状态的执行函数不关心"下一帧会不会换状态"。
+\end{enumerate}
+
+\subsubsection{状态转换的决策逻辑}
+
+\texttt{determineNextState()} 是本系统的核心（约 85 行），综合评估多项条件来决定状态切换：
+
+\begin{itemize}
+  \item \textbf{是否无法伤害对手}（canDamageTarget）：拳击打链甲无效、弹药耗尽等情况 → 优先找武器
+  \item \textbf{地面上是否有更好的物资}（hasWeaponDrop / hasArmorDrop / hasSupplyDrop）→ 降低攻击倾向，提升搜索倾向
+  \item \textbf{有无尽模式}：无尽模式中移除了"低血量撤退"逻辑（因为 AI 有 endlessImmortal 可复活），改为纯概率驱动
+  \item \textbf{血量比例}（healthRatio $\leq 32\%$）：触发人格分化——"背水一战"人格继续打，"游走机动"人格撤退找药
+  \item \textbf{长期目标锁}（GOAL\_LOCK\_DURATION）：每约 10 秒通过 \texttt{refreshStrategicGoal()} 重新抛骰子决定"进攻为主"还是"搜刮为主"，锁定期内不频繁切换，避免帧间抖动
+\end{itemize}
+
+\textbf{人格系统}为决策注入了可控的随机性。AI 出生时随机分配两种人格之一：
+\begin{itemize}
+  \item \textbf{BACK\_TO\_WALL（背水一战）}：低血量时仍倾向进攻，搜刮倾向低（25\%-35\%）
+  \item \textbf{KITE\_SCAVENGER（游走机动）}：低血量时大幅提升搜刮概率（60\%-80\%），优先找补给和装备
+\end{itemize}
+
+人格设计的目的不是让 AI "聪明"，而是让\textbf{每次对局的 AI 行为不可预测}。相同配置下，不同人格的 AI 会给玩家完全不同的感觉。
+
+\subsubsection{特殊分支的实际价值}
+
+\textbf{卡住检测与脱困}是特殊分支中最直接体现工程价值的。AI 在复杂平台地形中可能卡在边缘反复左右晃动。检测方式：连续多帧位移小于阈值 → 判为卡住 → 清空动作计划 → 执行脱困跳跃。这个逻辑完全跳过状态机，无论当前是什么状态，都能第一时间响应，极大提升了 AI 的流畅度和玩家的体验。
+
+\textbf{施法后强制攻击模式}解决了一个微妙的时序问题：AI 释放法术后，如果下一帧 \texttt{determineNextState()} 评估为"距离太远要跟随"，法术的战略价值就白费了。因此在 \texttt{executeFollow()} 内部插入了一段施法后的强制逻辑——法术释放后的 60 帧内强制保持攻击态势，靠近对手并连续攻击。
+
+\textbf{隐身目标处理}则展示了状态机覆盖不到的边缘情况。玩家隐身时，AI 不再用状态机跟踪目标，而是前往玩家隐身前的最后已知位置巡逻。如果AI带"破影一击"词条，AI 还有专门的前期积攒物资、最后时机出手的策略。
+
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
@@ -768,28 +809,171 @@ void Widget::gameLoop() {
   box/.style={rectangle, draw, rounded corners, align=center, minimum width=3.2cm, minimum height=0.8cm},
   arr/.style={-Latex, thick}
 ]
-\node[box] (sense) {感知环境};
-\node[box, below=of sense] (state) {选择状态};
-\node[box, below left=0.9cm and 1.6cm of state] (attack) {攻击};
-\node[box, below=of state] (pickup) {拾取};
-\node[box, below right=0.9cm and 1.6cm of state] (cast) {释放法术};
-\node[box, below=2.0cm of state] (recover) {卡住脱困/重新定位};
+\node[box] (special) {特殊分支优先：隐身 / 卡住 / 施法后追击};
+\node[box, below=of special] (sense) {感知环境（目标位置、可见性、掉落物）};
+\node[box, below=of sense] (state) {determineNextState：评估血量/物资/人格};
+\node[box, below left=0.9cm and 1.6cm of state] (attack) {ATTACK：近战/远程};
+\node[box, below=of state] (follow) {FOLLOW：寻路追击};
+\node[box, below right=0.9cm and 1.6cm of state] (seek) {SEEK\_WEAPON/ARMOR/SUPPLY};
+\node[box, below=2.0cm of state] (recover) {卡住脱困 / 施法后强制攻击};
 
+\draw[arr] (special) -- (sense);
 \draw[arr] (sense) -- (state);
 \draw[arr] (state) -- (attack);
-\draw[arr] (state) -- (pickup);
-\draw[arr] (state) -- (cast);
+\draw[arr] (state) -- (follow);
+\draw[arr] (state) -- (seek);
 \draw[arr] (attack) -- (sense);
-\draw[arr] (pickup) -- (sense);
-\draw[arr] (cast) -- (sense);
+\draw[arr] (follow) -- (sense);
+\draw[arr] (seek) -- (sense);
 \draw[arr] (state) -- (recover);
 \draw[arr] (recover) -- (sense);
 \end{tikzpicture}
-\caption{AI决策流程（最小化可读版本）。}
+\caption{AI 决策流程。顶层特殊分支（隐身/卡住/施法后追击）直接跳过状态机；正常流程走感知 → 状态转换评估 → 状态执行；卡住和施法后强制模式为独立路径，不受状态机当前状态影响。}
 \label{fig:ai-flow}
 \end{figure}
 
-\section{战斗结算流程（必选 图3）}
+\subsection{代码验证}
+
+\begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.26\textwidth}p{0.12\textwidth}}
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endfirsthead
+\bottomrule
+\endhead
+FOLLOW 状态寻路 & 玩家在地图另一端 & AI 通过 Map BFS 算出平台序列，生成朝向玩家的移动意图，遇到平台边缘自动跳跃 & 通过 \\
+\hline
+状态切换 & AI 血量降至 30\% + 人格为 KITE\_SCAVENGER & determineNextState 返回 RETREAT 或 SEEK\_SUPPLY，AI 从攻击转为撤退/搜刮 & 通过 \\
+\hline
+卡住脱困 & AI 卡在平台边缘连续 100 帧位移 < 5 像素 & isStuck() 返回 true → handleStuckSituation 清空动作计划并执行跳跃脱困 & 通过 \\
+\hline
+施法后追击 & AI 释放定身法命中玩家 & 进入 60 帧强制攻击窗口，AI 朝被定身的玩家移动并持续输出，不会切回 FOLLOW & 通过 \\
+\hline
+隐身搜索 & 玩家激活隐身 & AI 保存最后已知位置，前往该位置附近巡逻，不会呆立原地 & 通过 \\
+\hline
+人格分化 & 同一配置对局两局 & 两局 AI 人格可能不同（出生时随机），导致低血量时行为截然不同 & 通过 \\
+\bottomrule
+\end{longtable}
+
+\subsection{替代方案分析}
+
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{方案} & \textbf{优势} & \textbf{代价/为何未采用} \\
+\midrule
+\textbf{纯 if-else 决策树} & 无框架开销，直接 & 条件组合爆炸（血量 × 可见性 × 物资 × 地形），维护不可持续 \\
+\hline
+\textbf{行为树（Behavior Tree）} & 模块化决策节点，易于可视化和组合；Unreal Engine 等引擎内置支持 & 实现一个可用的行为树框架本身就需要大量代码（节点基类、组合节点、装饰器、黑板）；对 C++ 课程项目来说，实现行为树的成本已超过调试 AI 行为的成本 \\
+\hline
+\textbf{GOAP/规划器} & 最优动作序列搜索，理论上能产生更智能的行为 & 实现极其复杂，且规划结果不可预测，调试困难。对于 8 状态的小型状态机，规划器过度设计 \\
+\hline
+\textbf{当前方案（分层 FSM）} & 实现成本低；状态边界清晰，出问题能快速定位是"特殊分支""状态机"还是"状态转换"的 bug；预留了 8 个状态的扩展空间 & 状态增多时转换矩阵变复杂；相较行为树，表达并行行为（一边移动一边射击）不够自然——本项目中通过"施法后强制模式"这类特殊分支补偿了这个弱点 \\
+\bottomrule
+\end{longtable}
+
+\subsection{小结}
+
+有限状态机在本项目中不是"最先进的 AI 技术"，但它足够胜任 8 个状态 + 4 个特殊分支的决策空间，且在课程周期内能以最低的代码量提供可区分的 AI 行为。关键设计是\textbf{特殊分支跳过状态机}和\textbf{目标锁定防抖动}——前者处理紧急情况，后者防止决策在相邻帧之间反复切换。加上人格系统注入的随机性，FSM 驱动的 AI 在有限的复杂度下交出了"不可预测且可维护"的答卷。
+
+\newpage
+
+% ============================================================
+%  技术 5：实时游戏主循环的时序设计
+% ============================================================
+\section{技术五：实时游戏主循环的时序设计}
+
+\subsection{游戏中引出的问题}
+
+格斗游戏的实时性要求极高。一帧 16ms 内要完成：读取键盘输入 → AI 决策 → 移动角色 → 碰撞检测 → 伤害结算 → 生成/清理实体 → 播放音效 → 重绘屏幕。这些子系统之间存在严格的时序依赖：
+
+\begin{itemize}
+  \item 碰撞检测\textbf{必须}在移动之后执行——否则检测的是上一帧的位置，"子弹穿透角色"会频繁出现
+  \item 死亡检查\textbf{必须}在伤害结算之后——结算前检查会导致"最后一击"被跳过
+  \item 实体清理\textbf{必须}在所有计算完成后——提前清理会让还在空中的子弹在被命中判定前消失
+  \item 帧时间 dt 必须基于真实耗时——如果机器卡顿了一帧（比如 0.1s 而不是 0.016s），角色的移动距离和冷却计时需要同步放大，否则会出现"时间变慢"的观感
+\end{itemize}
+
+简单地把所有模块扔进一个 while 循环而不管理执行顺序，会导致各种难以复现的 bug：子弹偶尔穿透、死亡触发时机不一致、卡顿后行为异常。这些 bug 的共同特征是\textbf{不稳定}——同样的攻击有时命中有时穿透，给调 bug 带来极大痛苦。
+
+\subsection{技术方案与设计思路}
+
+\subsubsection{固定的帧更新流水线}
+
+本项目的 gameLoop 函数约 40 行，但其中包含了一个严格顺序的流水线。下面展示完整流程（注释中标记了每个步骤的目的和时序依赖）：
+
+\begin{verbatim}
+void Widget::gameLoop() {
+    // ── 1. 计算真实帧时间（处理卡顿补偿） ──
+    float dt = lastTime.restart() / 1000.0f;
+    m_gameTime += dt;
+
+    // ── 2. 计时器与生成逻辑 ──
+    //     无尽模式 AI 定时获取词条、随机生成掉落物
+    if (currentSession.mode == GameSession::Mode::ENDLESS) {
+        m_endlessAiModifierTimer += dt;
+        if (m_endlessAiModifierTimer >= ENDLESS_AI_MODIFIER_INTERVAL)
+            applyRandomModifierToAI();
+    }
+    spawnDrop();       // 每帧尝试生成掉落物
+    updateDrops(dt);   // 更新已有掉落物计时
+
+    // ── 3. 死亡检查（伤害结算之前不能做） ──
+    if (players[0]->isDead()) { gameEnd(1); return; }
+    if (players[1]->isDead()) { gameEnd(0); return; }
+
+    players[0]->setDt(dt); players[1]->setDt(dt);
+
+    // ── 4. AI 决策（生成意图，不执行移动） ──
+    ai->updateIntent(moveIntent, attackIntent);
+    intent[1].moveIntent    = moveIntent;
+    intent[1].attackIntent  = attackIntent;
+
+    // ── 5. 执行移动（玩家 + AI） ──
+    controllers[0]->handleIntent(intent[0].moveIntent, ...);
+    controllers[1]->handleIntent(intent[1].moveIntent, ...);
+
+    // ── 6. 碰撞检测与战斗结算 ──
+    //     位置已更新，此时碰撞检测的是"最新位置"
+    cm.checkPlayerVsPlayerCollision(controllers[0], controllers[1]);
+    updateBalls(dt);    // 飞行物移动 + 碰撞检测
+
+    // ── 7. 状态更新 ──
+    tickSpells(dt);     // 法术冷却递减
+
+    // ── 8. 清理过期对象（所有结算完成后） ──
+    entities.erase(std::remove_if(entities.begin(), entities.end(),
+                   [](auto& e) { return e->shouldBeRemoved(); }),
+                   entities.end());
+
+    // ── 9. 触发重绘（paintEvent） ──
+    update();
+}
+\end{verbatim}
+
+这个时序设计的核心原则是：\textbf{信息在帧内单向流动，不做跨步骤回写。}步骤 1-3 收集信息，步骤 4-5 更新位置，步骤 6 基于最新位置结算，步骤 7-9 做收尾和展示。如果步骤 6 修改了某个实体的位置（比如反弹），被反弹的实体位置变化会在下一帧的步骤 5 中生效——不会出现"同一帧内两个步骤并发修改导致不一致"的问题。
+
+\subsubsection{帧时间补偿（dt 传递）}
+
+卡顿是不可避免的——垃圾回收、操作系统调度、磁盘 IO 都可能阻塞一帧。本项目中 dt 的传递路径是：
+
+\begin{center}
+\texttt{lastTime.restart() → float dt → players[i]->setDt(dt) → Entity::setDt(dt) → 物理公式}
+\end{center}
+
+在 \texttt{applyGravity()} 中，位置更新用的是 $v_y = v_y + g \cdot dt$ 而非 $v_y = v_y + g \cdot 0.016$。如果 dt = 0.1s（卡顿了 6 帧），角色会跳跃 $0.1 / 0.016 \approx 6$ 倍的距离，补偿了丢失的时间。这个方法叫\textbf{可变时间步长}（variable timestep），优点是实现简单且卡顿后位置一致性不丢失，缺点是物理模拟不是严格确定性的（两次运行因 dt 微小差异可能产生略有不同的轨迹）。对本项目这种不要求帧精确复现的格斗游戏，这个代价是可接受的。
+
+\subsubsection{对象生命周期管理}
+
+球和子弹是瞬态对象（击中后立即删除），但删除时机不当会导致悬挂指针或 double-free。本项目使用 \texttt{std::shared\_ptr<Entity>} 统一管理实体对象，配合 \texttt{std::weak\_ptr} 在掉落物和球容器中存储弱引用：
+
+\begin{verbatim}
+std::vector<std::shared_ptr<Entity>> entities;  // 所有实体（拥有所有权）
+std::vector<std::weak_ptr<Ball>> balls;          // 球引用（不拥有所有权）
+std::vector<std::weak_ptr<DropItem>> drops;     // 掉落物引用（不拥有所有权）
+\end{verbatim}
+
+每帧末尾通过 \texttt{remove\_if + shouldBeRemoved()} 清理 entities 中的过期对象，同时用 \texttt{weak\_ptr::expired()} 清理 balls 和 drops 中已失效的引用。这个机制的优点是：balls 容器中的引用在 entity 被销毁后自动变空，不会出现"拿到指针但对象已经被删除"的情况。
+
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
@@ -799,50 +983,218 @@ void Widget::gameLoop() {
 ]
 \node[box] (event) {输入或碰撞事件};
 \node[box, below=of event] (check) {命中判定与目标验证};
-\node[box, below=of check] (damage) {伤害/硬直/反弹逻辑};
-\node[box, below=of damage] (update) {更新血量、状态、冷却};
-\node[box, below=of update] (feedback) {动画、音效、UI反馈};
+\node[box, below=of check] (damage) {伤害计算 + 词条遍历 + 硬直查表};
+\node[box, below=of damage] (update) {更新血量、状态、法术冷却};
+\node[box, below=of update] (cleanup) {清理过期实体（remove\_if + shouldBeRemoved）};
+\node[box, below=of cleanup] (feedback) {重绘（update → paintEvent）+ 音效播放};
 
 \draw[arr] (event) -- (check);
 \draw[arr] (check) -- (damage);
 \draw[arr] (damage) -- (update);
-\draw[arr] (update) -- (feedback);
+\draw[arr] (update) -- (cleanup);
+\draw[arr] (cleanup) -- (feedback);
 \end{tikzpicture}
-\caption{战斗结算流水线。}
+\caption{单帧执行流水线。箭头表示信息流动方向——前一步的输出是后一步的输入。所有步骤在当前帧内顺序执行，不跨步骤回写，保证每个步骤操作的数据在帧内是一致的。}
 \label{fig:combat-flow}
 \end{figure}
 
-\section{伤害计算详细流程（必选 图4）}
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  node distance=0.95cm,
-  box/.style={rectangle, draw, rounded corners, align=center, minimum width=3.5cm, minimum height=0.75cm},
-  arr/.style={-Latex, thick}
-]
-\node[box] (hit) {碰撞有效};
-\node[box, below=of hit] (attacker) {获取攻击者属性};
-\node[box, below=of attacker] (defender) {获取防守者属性};
-\node[box, below=of defender] (base) {基础伤害 = 武器伤害};
-\node[box, below=of base] (burst) {触发暴击？Y增伤50\%};
-\node[box, below=of burst] (modifier) {应用词条修饰};
-\node[box, below=of modifier] (armor) {减去护甲减伤};
-\node[box, below=of armor] (stagger) {计算硬直时间};
-\node[box, below=of stagger] (reflection) {反弹判定};
-\node[box, below=of reflection] (apply) {应用伤害与状态};
+\subsection{代码验证}
 
-\draw[arr] (hit) -- (attacker);
-\draw[arr] (attacker) -- (defender);
-\draw[arr] (defender) -- (base);
-\draw[arr] (base) -- (burst);
-\draw[arr] (burst) -- (modifier);
-\draw[arr] (modifier) -- (armor);
-\draw[arr] (armor) -- (stagger);
-\draw[arr] (stagger) -- (reflection);
-\draw[arr] (reflection) -- (apply);
-\end{tikzpicture}
-\caption{伤害计算详细流程（含暴击、词条、护甲、硬直、反弹）。}
-\label{fig:damage-calc}
-\end{figure}
+\begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.26\textwidth}p{0.12\textwidth}}
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endfirsthead
+\bottomrule
+\endhead
+碰撞时序 & 玩家和 AI 同时朝对方冲刺并出拳 & 碰撞在双方移动后结算，命中判定基于最新位置，不会出现"打空气命中"或"穿透" & 通过 \\
+\hline
+卡顿补偿 & 模拟帧卡顿（强制 sleep 50ms） & dt 变大，角色跳跃高度和移动距离同步放大，不出现"画面停顿但逻辑加速"的现象 & 通过 \\
+\hline
+对象安全清理 & 投掷球飞行 3 秒后自动消失 & entities 末尾 remove\_if 清理，balls 中的 weak\_ptr::expired 返回 true，同步清理弱引用 & 通过 \\
+\hline
+死亡检查时序 & 双方同时对最后一击 & 伤害结算完成后才检查 isDead，不存在"击杀了但伤害没扣"的情况 & 通过 \\
+\bottomrule
+\end{longtable}
+
+\subsection{替代方案分析}
+
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{方案} & \textbf{优势} & \textbf{代价/为何未采用} \\
+\midrule
+\textbf{固定时间步长（Fixed Timestep）} & 物理模拟严格确定性，回放和录像可精确复现 & 需要累积器（accumulator）机制，额外的代码复杂度；慢帧会导致"螺旋式死亡"（多帧积压同时结算）。本项目的精度需求不要求帧精确复现 \\
+\hline
+\textbf{多线程游戏循环} & 可利用多核并行处理物理/AI/渲染 & 线程同步会极大增加复杂度（锁、原子操作、数据竞争）；对于 60FPS 的 2D 游戏，单线程已足够支撑所有计算 \\
+\hline
+\textbf{当前方案（单线程可变 dt 流水线）} & 实现极简，时序完全可控，调试路径清晰 & 物理非确定性的代价；如果未来加入联网对战或录像回放，需要改为固定时间步长 \\
+\bottomrule
+\end{longtable}
+
+\subsection{小结}
+
+游戏主循环的时序设计本质上是一个\textbf{信息流编排问题}：在每 16ms 的时间窗口内，如何安排子系统执行顺序使得每步计算都基于"最新且一致"的信息。本项目的方案选择了最简单可维护的路径——单线程、固定顺序、可变时间步长——在 60FPS 要求下稳定运行，且调试时卡在某一步可以精确知道哪些数据已经更新、哪些还没变。
+
+\newpage
+
+% ============================================================
+%  技术 6：跨平台构建系统的抽象与配置
+% ============================================================
+\section{技术六：跨平台构建系统的抽象与配置}
+
+\subsection{游戏中引出的问题}
+
+这个游戏的源代码组织面临一个"纯代码之外"的工程问题。项目包含：
+
+\begin{itemize}
+  \item 40+ 个源文件（.h / .cpp），分布在 10 个模块中
+  \item 依赖 Qt 6 的三个独立模块：Widgets、Multimedia、Core
+  \item 一个 Qt 资源文件（.qrc）管理图片和音效资源
+  \item 需要在 Windows（MinGW）和 macOS 上都能编译
+  \item 使用 C++17 标准（结构化绑定、\texttt{std::optional}、\texttt{if constexpr} 等特性）
+  \item MSVC 编译器需要处理 UTF-8 中文注释的编码
+\end{itemize}
+
+如果手动管理编译，典型的一条 g++ 编译命令会是：
+
+\begin{verbatim}
+g++ -std=c++17 -I/path/to/Qt6/include -I/path/to/Qt6/include/QtWidgets
+    -I/path/to/Qt6/include/QtCore -I/path/to/Qt6/include/QtMultimedia
+    -L/path/to/Qt6/lib -lQt6Widgets -lQt6Core -lQt6Multimedia
+    main.cpp widget.cpp player.cpp ... (30+ 个文件)
+    -o shooting_game
+\end{verbatim}
+
+这条命令超过 300 个字符，而且：
+\begin{itemize}
+  \item 在 Windows 上 Qt 的路径是 \texttt{C:\textbackslash Qt\textbackslash 6.5.3\textbackslash mingw\_64\textbackslash include}，macOS 上是 \texttt{/usr/local/opt/qt@6/include}——路径完全不同
+  \item MinGW、MSVC、Clang 的编译选项名称不同（比如 C++17 标准在 MSVC 是 \texttt{/std:c++17} 而非 \texttt{-std=c++17}）
+  \item 头文件依赖关系改变后（比如 player.h 新增了 \texttt{\#include "spellstate.h"}），需要知道哪些 .cpp 需要重新编译，只手动重编改动的文件是不现实的
+\end{itemize}
+
+\subsection{技术方案与设计思路}
+
+CMake 是一个\textbf{构建系统生成器}——它读取平台无关的 \texttt{CMakeLists.txt}，生成平台原生的构建文件（Windows 上生成 Ninja 或 Visual Studio 项目，macOS/Linux 上生成 Makefile 或 Ninja），再由原生工具执行实际编译。CMake 本身不编译任何代码，它做的事情是把"我要做什么"翻译成"这个平台上怎么做"。
+
+\subsubsection{CMake 如何解决本项目的问题}
+
+\textbf{第一：平台无关的编译器配置。}
+
+\begin{verbatim}
+set(CMAKE_CXX_STANDARD 17)          # 所有平台使用 C++17
+set(CMAKE_CXX_STANDARD_REQUIRED ON) # 编译器不支持 C++17 则直接报错
+
+if(MSVC)
+    add_compile_options(/utf-8)     # 仅 MSVC 需要此选项
+endif()
+\end{verbatim}
+
+这里 \texttt{CMAKE\_CXX\_STANDARD 17} 在生成构建文件时会自动转换为对应编译器的选项：GCC/Clang → \texttt{-std=c++17}，MSVC → \texttt{/std:c++17}。作者不需要记住不同编译器的 flag 写法。\texttt{if(MSVC)} 条件编译只对 Windows 上的 MSVC 编译器添加 \texttt{/utf-8}，其他编译器不受影响。
+
+\textbf{第二：库依赖的声明式查找。}
+
+\begin{verbatim}
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Multimedia Core)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Multimedia Core)
+\end{verbatim}
+
+第一行\textbf{查找 Qt 本身}：优先找 Qt6，找不到就找 Qt5。如果两个都找不到，CMake 会在配置阶段直接报错并给出清晰的错误信息（"Could not find a package configuration file..."），而不是在链接阶段爆出几十行 undefined reference 错误。
+
+第二行\textbf{根据找到的版本导入对应模块}。\texttt{Qt\$\{QT\_VERSION\_MAJOR\}} 在找到 Qt6 时展开为 \texttt{Qt6}，找到 Qt5 时展开为 \texttt{Qt5}。
+
+\textbf{第三：资源文件的集成。}
+
+\begin{verbatim}
+qt_add_resources(GAME_RESOURCES Resources/game_character.qrc)
+\end{verbatim}
+
+\noindent 这行代码将 Qt 资源文件（.qrc）编译为 C++ 源代码并链接进可执行文件。所有图片和音效在运行时通过 \texttt{:/assets/...} 路径访问，不需要额外打包或配置资源搜索路径。
+
+\textbf{第四：目标与链接的声明式管理。}
+
+\begin{verbatim}
+target_link_libraries(shooting_game PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Multimedia
+    Qt${QT_VERSION_MAJOR}::Core
+)
+\end{verbatim}
+
+\noindent \texttt{target\_link\_libraries} 不是简单地拼凑 \texttt{-l} 选项——它会自动推导 include 路径（继承 Qt 模块的 include 目录）、链接库路径、以及必要的编译定义。\texttt{PRIVATE} 表示这三个模块是 shooting\_game 内部使用的依赖，不会泄漏给其他链接了 shooting\_game 的目标。
+
+\textbf{第五：平台特定打包配置。}
+
+\begin{verbatim}
+set_target_properties(shooting_game PROPERTIES
+    MACOSX_BUNDLE TRUE          # macOS：打包为 .app bundle
+    WIN32_EXECUTABLE TRUE       # Windows：不弹出控制台窗口
+)
+\end{verbatim}
+
+\noindent 同样的 CMake 语句在不同平台上产生不同的效果：macOS 上将可执行文件组织为 \texttt{shooting\_game.app/Contents/MacOS/...} 的 bundle 结构，Windows 上将入口函数设为 \texttt{WinMain} 而非 \texttt{main} 以避免弹出控制台窗口（或对 MinGW 设置子系统为 Windows）。
+
+\textbf{第六：源码的自动化收集与 moc 预处理。}
+
+Qt 的信号槽需要\textbf{元对象编译器（moc）}——它会扫描头文件中包含 \texttt{Q\_OBJECT} 宏的类，生成额外的 C++ 代码（信号的实现、类型信息、反射元数据）。手动运行 moc 并在编译时链接生成的代码极其繁琐。
+
+\begin{verbatim}
+set(CMAKE_AUTOMOC ON)  # 自动运行 moc
+set(CMAKE_AUTORCC ON)  # 自动编译 .qrc 资源文件
+set(CMAKE_AUTOUIC ON)  # 自动编译 .ui 界面文件
+\end{verbatim}
+
+\noindent 这三行开启后，CMake 会自动扫描源码目录中含有 \texttt{Q\_OBJECT} 的头文件并运行 moc，自动处理 .qrc，自动将 .ui 文件编译为 C++ 头文件。开发者只需写头文件，不需要手动管理这些中间生成物。
+
+\subsection{代码验证}
+
+\begin{longtable}{p{0.22\textwidth}p{0.34\textwidth}p{0.26\textwidth}p{0.12\textwidth}}
+\toprule
+\textbf{验证项} & \textbf{输入/触发} & \textbf{预期行为} & \textbf{结论} \\
+\midrule
+\endfirsthead
+\bottomrule
+\endhead
+平台可移植性 & 在 Windows (MinGW) 和 macOS 上分别配置 & 同一套 CMakeLists.txt，两个平台上分别找到对应 Qt 安装路径并生成正确的构建文件 & 通过 \\
+\hline
+库缺失报错 & 卸载 Qt Multimedia 模块后重新 cmake & CMake 配置阶段报错 "Could not find Qt6Multimedia"，而非编译到链接阶段才报 undefined reference & 通过 \\
+\hline
+moc 自动处理 & 修改 playercontroller.h 中 signals 声明 & 重新编译时 moc 自动重新生成元对象代码，编译和链接无需手动干预 & 通过 \\
+\hline
+头文件依赖追踪 & 修改 spellstate.h（被 player.h 包含，player.h 被 10+ 个 .cpp 包含）& 只重新编译受影响的 .cpp，无需 clean rebuild & 通过 \\
+\bottomrule
+\end{longtable}
+
+\subsection{替代方案分析}
+
+\begin{longtable}{p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+\textbf{方案} & \textbf{优势} & \textbf{代价/为何未采用} \\
+\midrule
+\textbf{手动 Makefile / 批处理脚本} & 无外部工具依赖，适合 2-3 个文件的极小项目 & 跨平台路径管理极其痛苦（两个平台两套脚本）；头文件依赖需要手动维护或借助 gcc -M；新增 .cpp 文件需要手动更新构建脚本 \\
+\hline
+\textbf{qmake（Qt 原生构建工具）} & Qt 自带，默认配置简单 & qmake 的功能集远少于 CMake；跨平台能力弱（本质上是一个增强版 Makefile 生成器）；Qt 官方已明确 qmake 进入维护模式，推荐 CMake \\
+\hline
+\textbf{Visual Studio 项目（.sln / .vcxproj）} & Windows 上原生 IDE 支持最好；图形界面配置编译器选项 & 锁定 Windows + MSVC；需要另外维护 macOS 的 Makefile 或 Xcode 项目——两套构建配置。本项目不需要 Visual Studio 的 GUI 调试器（用 qDebug 即可） \\
+\hline
+\textbf{当前方案（CMake）} & 平台无关的声明式构建描述；强大的 find\_package 机制；Qt 官方推荐；社区生态最大 & 学习曲线稍陡（find\_package 的语法和 target 属性的概念需要时间理解）。但对课程项目而言，\texttt{CMakeLists.txt} 全文仅 90 行，已经用最简功能集覆盖了需求 \\
+\bottomrule
+\end{longtable}
+
+\subsection{小结}
+
+CMake 在本项目中的角色是\textbf{把"我要构建什么"和"怎么在这个平台上构建"分离}。开发者只需要在 CMakeLists.txt 中声明源码列表、C++ 标准版本、依赖的 Qt 模块和目标平台属性，CMake 负责将这些声明转换为当前平台的原生构建指令。对于一个 40+ 文件、跨平台、依赖多模块 Qt 库的项目，这个抽象使得"换个平台编译"从一件需要重写构建脚本的大工程变成无需任何改动的一键操作。
+
+% ============================================================
+%  结语
+% ============================================================
+\section*{结语}
+\addcontentsline{toc}{section}{结语}
+
+本项目从题目 3.19"横版格斗对战游戏"出发，实现了一个功能完整的游戏系统。但这篇报告论述的核心不是"我们做了个游戏"，而是\textbf{这个游戏为什么需要这六项技术}。
+
+六项技术之间存在内在关联：OOP 的继承和组合是模块化的基础（技术一），模块间的通信靠信号槽解耦（技术二），词条和法术通过数据驱动保持可扩展（技术三），AI 通过 FSM 实现结构化决策（技术四），所有模块在精心编排的时序中协同工作（技术五），最终由 CMake 屏蔽平台差异一键构建（技术六）。这六项技术不是并列的关系，而是一个\textbf{从内向外}的层次——从单个类的设计，到模块间通信，到系统的可扩展性和智能性，到运行时的执行编排，到最终的构建交付。
+
+\vspace{1em}
+\noindent\textbf{致谢：}感谢课程助教和主讲教师一学期的教学与答疑。本项目所有源码、资源文件和本文档的 LaTeX 源码均随提交一并提供。
 
 \end{document}
