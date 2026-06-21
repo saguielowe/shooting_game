@@ -63,6 +63,7 @@ private:
     void triggerModifierChoice(int player);
     void applyRandomModifierFromThreeOptionsToAI();
     void autoSwitchAIWeapon();
+    void autoSwitchAIWeaponFor(int aiIdx);
     int weaponScoreForAI(Player::WeaponType weapon, const std::shared_ptr<Player>& aiPlayer, const std::shared_ptr<Player>& targetPlayer) const;
     QVector<ModifierData> filteredModifierPoolForPlayer(int playerIndex, bool excludeMaxHpUp) const;
     void applyRandomModifierToAI();
@@ -101,7 +102,9 @@ private:
 
     QString currentScene;
     bool keyLeft = false, keyRight = false, crouching = false; // 辅助变量来判断玩家的按键输入对应哪种状态
-    std::shared_ptr<GameAI> ai = std::make_shared<GameAI>(); // 赋空初始值
+    std::shared_ptr<GameAI> ai  = std::make_shared<GameAI>();
+    std::shared_ptr<GameAI> ai2 = std::make_shared<GameAI>();
+    bool m_spectatorMode = false;
     Ui::Widget *ui;
 
     int m_maxHp, m_maxBalls, m_maxBullets, m_maxSnipers;

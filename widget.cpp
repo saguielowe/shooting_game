@@ -370,13 +370,21 @@ void Widget::initGame() {
     });
 
     // ---- AI（人机/无尽模式启动，双人不启动）------------
-    if (currentSession.mode != GameSession::Mode::PVP) { // 那为什么无尽模式AI似乎没反应？
+    if (currentSession.mode != GameSession::Mode::PVP) {
         ai->setAIPlayer(players[1]);
         ai->setTargetPlayer(players[0]);
         ai->setFollowDistance(80.0f);
         ai->setDifficulty(5);
         ai->setCurrentSpell(currentSession.spellP2);
         ai->startAI();
+
+        // P1 AI（观战模式用，始终启动但仅 spectator 模式时覆盖 P1 意图）
+        ai2->setAIPlayer(players[0]);
+        ai2->setTargetPlayer(players[1]);
+        ai2->setFollowDistance(80.0f);
+        ai2->setDifficulty(5);
+        ai2->setCurrentSpell(currentSession.spellP1);
+        ai2->startAI();
     }
     m_gameTime          = 0.f;
     m_timeSinceLastDrop = 0.f;
@@ -420,6 +428,7 @@ void Widget::showMatchResult(const QString& text) {
 void Widget::cleanupGame() {
     timer->stop();
     ai->stopAI();
+    if (ai2) ai2->stopAI();
 
     // 断开 controller 的信号，防止 clear 后还有回调
     for (auto& c : controllers)
@@ -466,9 +475,10 @@ void Widget::paintEvent(QPaintEvent*) {
         }
     }
 
-    if (ai) {
-        ai->draw(painter);
-    }
+    // AI 寻路调试红框，演示时注释掉
+    // if (ai) {
+    //     ai->draw(painter);
+    // }
 
     // 保护 entities
     for (const auto& entity : entities) {
@@ -490,6 +500,15 @@ inputIntent: 输入意图。
 void Widget::keyPressEvent(QKeyEvent* event) {
     emit keyPressed();
     pressedKeys.insert(event->key());
+
+    // F+G+H 同时按：切换观战模式（双 AI 互掐）
+    if (pressedKeys.contains(Qt::Key_F) &&
+        pressedKeys.contains(Qt::Key_G) &&
+        pressedKeys.contains(Qt::Key_H)) {
+        m_spectatorMode = !m_spectatorMode;
+        qDebug() << "[Spectator] mode" << (m_spectatorMode ? "ON" : "OFF");
+    }
+
     updateIntents();
 }
 void Widget::updateIntents() {
@@ -589,8 +608,24 @@ void Widget::gameLoop() {
         }
         intent[1].moveIntent = moveIntent;
         intent[1].attackIntent = attackIntent;
-        //qDebug() << moveIntent << attackIntent;
     }
+
+    // 观战模式：P1 也交给 AI
+    if (m_spectatorMode) {
+        autoSwitchAIWeaponFor(0);   // P1 自动换武器
+        MoveIntent moveIntent0 = MoveIntent::NONE;
+        AttackIntent attackIntent0 = false;
+        ai2->updateIntent(moveIntent0, attackIntent0);
+        if (ai2->consumeSpellCastIntent()) {
+            tryActivateSpell(0);
+        }
+        if (currentScene == "grass" && moveIntent0 == MoveIntent::NONE) {
+            moveIntent0 = MoveIntent::CROUCH;
+        }
+        intent[0].moveIntent   = moveIntent0;
+        intent[0].attackIntent = attackIntent0;
+    }
+
     controllers[0]->handleIntent(intent[0].moveIntent, intent[0].attackIntent);
     controllers[1]->handleIntent(intent[1].moveIntent, intent[1].attackIntent);
     cm.checkPlayerVsPlayerCollision(controllers[0].get(), controllers[1].get());
@@ -972,24 +1007,19 @@ void Widget::updateAIInfo()
 
     // 更新AI的掉落物信息
     ai->updateDropsInfo(dropInfos);
+    if (ai2) ai2->updateDropsInfo(dropInfos);
 
-    // 更新AI玩家的当前武器（假设player2是AI）
-    auto wp = players[1]->weapon;
-    if (wp == Player::WeaponType::punch){
-        ai->setCurrentWeapon("punch");
-    }
-    else if (wp == Player::WeaponType::knife){
-        ai->setCurrentWeapon("knife");
-    }
-    else if (wp == Player::WeaponType::ball){
-        ai->setCurrentWeapon("ball");
-    }
-    else if (wp == Player::WeaponType::rifle){
-        ai->setCurrentWeapon("rifle");
-    }
-    else if (wp == Player::WeaponType::sniper){
-        ai->setCurrentWeapon("sniper");
-    }
+    // 更新AI玩家的当前武器
+    auto syncWeapon = [](std::shared_ptr<GameAI>& a, Player::WeaponType w) {
+        if (!a) return;
+        if      (w == Player::WeaponType::punch)  a->setCurrentWeapon("punch");
+        else if (w == Player::WeaponType::knife)  a->setCurrentWeapon("knife");
+        else if (w == Player::WeaponType::ball)   a->setCurrentWeapon("ball");
+        else if (w == Player::WeaponType::rifle)  a->setCurrentWeapon("rifle");
+        else if (w == Player::WeaponType::sniper) a->setCurrentWeapon("sniper");
+    };
+    syncWeapon(ai,  players[1]->weapon);
+    syncWeapon(ai2, players[0]->weapon);
 }
 
 // DropItem 被捡起时调用（在 updateDrops 里判断 itemType == "modifier"）
@@ -1083,10 +1113,11 @@ int Widget::weaponScoreForAI(Player::WeaponType weapon,
     return score;
 }
 
-void Widget::autoSwitchAIWeapon() {
+void Widget::autoSwitchAIWeaponFor(int aiIdx) {
     if (players.size() < 2) return;
-    auto aiPlayer = players[1];
-    auto targetPlayer = players[0];
+    int targetIdx = 1 - aiIdx;
+    auto aiPlayer = players[aiIdx];
+    auto targetPlayer = players[targetIdx];
     if (!aiPlayer || !targetPlayer) return;
     if (aiPlayer->weaponSlots.isEmpty()) return;
 
@@ -1104,6 +1135,10 @@ void Widget::autoSwitchAIWeapon() {
         aiPlayer->activeSlotIndex = bestSlot;
         aiPlayer->weapon = aiPlayer->weaponSlots[bestSlot];
     }
+}
+
+void Widget::autoSwitchAIWeapon() {
+    autoSwitchAIWeaponFor(1);
 }
 
 void Widget::applyRandomModifierFromThreeOptionsToAI() {

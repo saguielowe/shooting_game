@@ -94,3 +94,5 @@ TODO_FEATURES.md
 *.toc
 *.tex.backup
 *.docx
+*.mp4
+report-old.pdf
